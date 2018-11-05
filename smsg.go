@@ -1,4 +1,4 @@
-package go-smsg
+package gosmsg
 
 import (
 	"bufio"
