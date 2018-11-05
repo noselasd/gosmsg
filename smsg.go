@@ -26,18 +26,24 @@ func (s *RawSMsg) addImpl(tag uint16, len int, data []byte) {
 	s.Data = append(s.Data, data...)
 }
 
+//Add adds a new tag with the given data
+//Note, newlines (\r or \n) must not occur within the data
 func (s *RawSMsg) Add(tag uint16, data []byte) {
 	s.addImpl(tag & ^gConstructor, len(data), data)
 }
 
+//AddVariableTag adds a new tag with a variable lenght tag
 func (s *RawSMsg) AddVariableTag(tag uint16) {
 	s.addImpl(tag|gConstructor, gVariableLen, []byte{})
 }
 
+//AddRaw adds the entire content of r as the value of a new tag
 func (s *RawSMsg) AddRaw(tag uint16, r *RawSMsg) {
 	s.addImpl(tag|gConstructor, len(r.Data), r.Data)
 }
 
+//AddSafe is a safe replacement for Add where newlines within data (\r or \n)
+//is escaped.
 func (s *RawSMsg) AddSafe(tag uint16, data []byte) {
 	r := make([]byte, 0, len(data))
 	for _, c := range data {
@@ -55,10 +61,12 @@ func (s *RawSMsg) AddSafe(tag uint16, data []byte) {
 	s.addImpl(tag, len(r), r)
 }
 
+//An Iter used to iterate through Tags
 type Iter struct {
 	data []byte
 }
 
+//A Tag of an SMsg
 type Tag struct {
 	Tag         uint16
 	Constructor bool
@@ -69,10 +77,12 @@ func (t *Tag) String() string {
 	return fmt.Sprintf("Tag: 0x%04X C:%t Data:%s", t.Tag, t.Constructor, t.Data)
 }
 
+//Tags returns an iterator used to iterate all the tags in the SMsg
 func (s *RawSMsg) Tags() Iter {
 	return Iter{s.Data}
 }
 
+//Skip makes the iterator skip over the next l bytes in the underlying SMsg
 func (i *Iter) Skip(l int) error {
 	if l > len(i.data) {
 		return io.ErrShortBuffer
@@ -81,6 +91,8 @@ func (i *Iter) Skip(l int) error {
 	return nil
 }
 
+//NextTag returns the next Tag in the SMsg or an error.
+//io.EOF is returned when there is no more tags to iterate
 func (i *Iter) NextTag() (t Tag, err error) {
 	if len(i.data) < 4 { //tag
 		return t, io.EOF
@@ -131,12 +143,29 @@ func (i *Iter) NextTag() (t Tag, err error) {
 	return t, nil
 }
 
+//RawSMsgReader is used to read RawSMsgs from a stream.
 type RawSMsgReader struct {
+	//reader to read SMsgs from
 	R         *bufio.Reader
 	lastError error
 }
 
-//returns true if there's data to read in RawSmsg
+//NewRawSMsgReader returns a new RawSMsgReader reading from r.
+//r is wrapped in a *bufio.Reader unless it already is a *bufio.Reader
+func NewRawSMsgReader(r io.Reader) RawSMsgReader {
+	rr := RawSMsgReader{}
+	if bufR, ok := r.(*bufio.Reader); ok {
+		rr.R = bufR
+	} else {
+		rr.R = bufio.NewReader(r)
+	}
+	return rr
+}
+
+//ReadRawSMsg returns the next RawSmsg or an error.
+//error will be io.EOF when the end is reached
+//The returned RawSmsg could be empty if an empty line
+//is encountered.
 func (r *RawSMsgReader) ReadRawSMsg() (RawSMsg, error) {
 	l, err := r.R.ReadBytes('\n')
 	if r.lastError != nil {

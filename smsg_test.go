@@ -1,7 +1,6 @@
 package gosmsg
 
 import (
-	"bufio"
 	"bytes"
 	"io"
 	"strconv"
@@ -161,7 +160,7 @@ func TestReader(t *testing.T) {
 	msg := []byte("10015 hello \n10015 hello \n\n")
 	b := bytes.NewBuffer(msg)
 
-	r := RawSMsgReader{bufio.NewReader(b), nil}
+	r := NewRawSMsgReader(b)
 	for i := 0; i < 2; i++ {
 		smsg, err := r.ReadRawSMsg()
 
