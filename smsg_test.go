@@ -158,24 +158,26 @@ func TestParseErr(t *testing.T) {
 }
 
 func TestReader(t *testing.T) {
-	msg := []byte("10015 hello \n")
+	msg := []byte("10015 hello \n10015 hello \n\n")
 	b := bytes.NewBuffer(msg)
 
-	r := RawSMsgReader{bufio.NewReader(b)}
+	r := RawSMsgReader{bufio.NewReader(b), nil}
+	for i := 0; i < 2; i++ {
+		smsg, err := r.ReadRawSMsg()
 
-	ok, smsg, err := r.ReadRawSMsg()
-	if !ok {
-		t.Fail()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("%v", smsg)
 	}
+
+	smsg, err := r.ReadRawSMsg()
+
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("%v", smsg)
+	smsg, err = r.ReadRawSMsg()
 
-	ok, smsg, err = r.ReadRawSMsg()
-	if ok {
-		t.Fail()
-	}
 	if err != io.EOF {
 		t.Fatal(err)
 	}

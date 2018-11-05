@@ -132,19 +132,27 @@ func (i *Iter) NextTag() (t Tag, err error) {
 }
 
 type RawSMsgReader struct {
-	R *bufio.Reader
+	R         *bufio.Reader
+	lastError error
 }
 
-//
-func (r *RawSMsgReader) ReadRawSMsg() (bool, RawSMsg, error) {
+//returns true if there's data to read in RawSmsg
+func (r *RawSMsgReader) ReadRawSMsg() (RawSMsg, error) {
 	l, err := r.R.ReadBytes('\n')
+	if r.lastError != nil {
+		return RawSMsg{}, r.lastError
+	}
+	r.lastError = err
 	if len(l) > 0 {
+		err = nil
 		for _, b := range []byte("\r\n") {
 			if len(l) > 0 && l[len(l)-1] == b {
 				l = l[:len(l)-1]
 			}
 		}
+	} else if err == nil {
+		err = io.ErrUnexpectedEOF
 	}
 
-	return len(l) > 0, RawSMsg{l}, err
+	return RawSMsg{l}, err
 }
