@@ -69,7 +69,7 @@ func (t *Tag) String() string {
 	return fmt.Sprintf("Tag: 0x%04X C:%t Data:%s", t.Tag, t.Constructor, t.Data)
 }
 
-func NewIter(s *RawSMsg) Iter {
+func (s *RawSMsg) Tags() Iter {
 	return Iter{s.Data}
 }
 
@@ -135,6 +135,7 @@ type RawSMsgReader struct {
 	R *bufio.Reader
 }
 
+//
 func (r *RawSMsgReader) ReadRawSMsg() (bool, RawSMsg, error) {
 	l, err := r.R.ReadBytes('\n')
 	if len(l) > 0 {

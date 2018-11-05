@@ -67,7 +67,7 @@ func TestIter(t *testing.T) {
 		Tag{Tag: 0x0010, Constructor: false, Data: []byte("8")},
 		Tag{Tag: 0x0000, Constructor: false, Data: []byte("")}}
 
-	for i, it := 0, NewIter(&r); ; i++ {
+	for i, it := 0, r.Tags(); ; i++ {
 		if tag, err := it.NextTag(); err != nil {
 			if err == io.EOF && i == len(exp) {
 				break
@@ -90,7 +90,7 @@ func TestIterSkip(t *testing.T) {
 		Tag{Tag: 0x0010, Constructor: false, Data: []byte("8")},
 		Tag{Tag: 0x0000, Constructor: false, Data: []byte("")}}
 
-	for i, it := 0, NewIter(&r); ; i++ {
+	for i, it := 0, r.Tags(); ; i++ {
 		if tag, err := it.NextTag(); err != nil {
 			if err == io.EOF && i == len(exp) {
 				break
@@ -113,7 +113,7 @@ func TestIterSkip(t *testing.T) {
 func TestParseErr(t *testing.T) {
 	r1 := RawSMsg{[]byte("10012 hi ")}
 
-	i1 := NewIter(&r1)
+	i1 := r1.Tags()
 	tag, err := i1.NextTag()
 	if err != nil {
 		t.Error(err)
@@ -122,35 +122,35 @@ func TestParseErr(t *testing.T) {
 	}
 
 	r2 := RawSMsg{[]byte("1001A hi ")}
-	i2 := NewIter(&r2)
+	i2 := r2.Tags()
 	tag, err = i2.NextTag()
 	if err == nil {
 		t.Error("expected error")
 	}
 
 	r3 := RawSMsg{[]byte("H0012 hi ")}
-	i3 := NewIter(&r3)
+	i3 := r3.Tags()
 	tag, err = i3.NextTag()
 	if err == nil {
 		t.Error("expected error")
 	}
 
 	r4 := RawSMsg{[]byte("1001-2 hi ")}
-	i4 := NewIter(&r4)
+	i4 := r4.Tags()
 	tag, err = i4.NextTag()
 	if err != strconv.ErrRange {
 		t.Error("expected error")
 	}
 
 	r5 := RawSMsg{[]byte("10014 hi ")}
-	i5 := NewIter(&r5)
+	i5 := r5.Tags()
 	tag, err = i5.NextTag()
 	if err != io.ErrShortBuffer {
 		t.Error("expected error")
 	}
 
 	r6 := RawSMsg{[]byte("10012hi")}
-	i6 := NewIter(&r6)
+	i6 := r6.Tags()
 	tag, err = i6.NextTag()
 	if err != io.ErrShortBuffer {
 		t.Error("expected error")
