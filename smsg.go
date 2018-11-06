@@ -168,7 +168,6 @@ func (r *RawSMsgReader) ReadRawSMsg() (RawSMsg, error) {
 	if r.lastError != nil {
 		return RawSMsg{}, r.lastError
 	}
-	r.lastError = err
 	if len(l) > 0 {
 		err = nil
 		for _, b := range []byte("\r\n") {
@@ -180,5 +179,6 @@ func (r *RawSMsgReader) ReadRawSMsg() (RawSMsg, error) {
 		err = io.ErrUnexpectedEOF
 	}
 
+	r.lastError = err
 	return RawSMsg{l}, err
 }
