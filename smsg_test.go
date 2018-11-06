@@ -54,20 +54,23 @@ func TestSmsgAddConstructed(t *testing.T) {
 }
 
 func tagEqual(t1, t2 Tag) bool {
-	return t1.Tag == t2.Tag && t1.Constructor == t2.Constructor &&
+	return t1.Tag == t2.Tag && t1.Constructor == t2.Constructor && t1.VarLen == t2.VarLen &&
 		bytes.Compare(t1.Data, t2.Data) == 0
 }
 func TestIter(t *testing.T) {
 	r := RawSMsg{[]byte("9019 922211 12345 Hello00101 800000 ")}
 	exp := []Tag{
-		Tag{Tag: 0x1019, Constructor: true, Data: []byte("922211 12345 Hello00101 800000 ")},
-		Tag{Tag: 0x1222, Constructor: true, Data: []byte("12345 Hello")},
-		Tag{Tag: 0x1234, Constructor: false, Data: []byte("Hello")},
-		Tag{Tag: 0x0010, Constructor: false, Data: []byte("8")},
-		Tag{Tag: 0x0000, Constructor: false, Data: []byte("")}}
+		Tag{Tag: 0x1019, Constructor: true, VarLen: true, Data: []byte("922211 12345 Hello00101 800000 ")},
+		Tag{Tag: 0x1222, Constructor: true, VarLen: false, Data: []byte("12345 Hello")},
 
+		Tag{Tag: 0x0010, Constructor: false, VarLen: false, Data: []byte("8")},
+		Tag{Tag: 0x0000, Constructor: false, VarLen: false, Data: []byte("")}}
+	expSubTag := Tag{Tag: 0x1234, Constructor: false, VarLen: false, Data: []byte("Hello")}
+
+	inSub := false
 	for i, it := 0, r.Tags(); ; i++ {
-		if tag, err := it.NextTag(); err != nil {
+		tag, err := it.NextTag()
+		if err != nil {
 			if err == io.EOF && i == len(exp) {
 				break
 			}
@@ -77,36 +80,24 @@ func TestIter(t *testing.T) {
 			t.Errorf("Got %s expected %s", &tag, &exp[i])
 			break
 		}
-	}
 
-}
-
-func TestIterSkip(t *testing.T) {
-	r := RawSMsg{[]byte("9019 922211 12345 Hello00101 800000 ")}
-	exp := []Tag{
-		Tag{Tag: 0x1019, Constructor: true, Data: []byte("922211 12345 Hello00101 800000 ")},
-		Tag{Tag: 0x1234, Constructor: false, Data: []byte("Hello")},
-		Tag{Tag: 0x0010, Constructor: false, Data: []byte("8")},
-		Tag{Tag: 0x0000, Constructor: false, Data: []byte("")}}
-
-	for i, it := 0, r.Tags(); ; i++ {
-		if tag, err := it.NextTag(); err != nil {
-			if err == io.EOF && i == len(exp) {
-				break
+		if tag.Tag == 0x1222 && tag.Constructor {
+			subIter := tag.SubTags()
+			subTag, subErr := subIter.NextTag()
+			if subErr != nil {
+				t.Errorf("t :%X err %v\n", tag.Tag, err)
 			}
-			t.Errorf("t :%X err %v\n", tag.Tag, err)
-			break
-		} else {
-			if tag.Tag == 0x1222 && tag.Constructor {
-				if skerr := it.Skip(len(tag.Data)); skerr != nil {
-					t.Logf("Error %v\n", skerr)
-				}
-			} else if !tagEqual(tag, exp[i]) {
+			if !tagEqual(subTag, expSubTag) {
 				t.Errorf("Got %s expected %s", &tag, &exp[i])
-				break
 			}
+			inSub = true
 		}
 	}
+
+	if !inSub {
+		t.Error("Not executed subTag code")
+	}
+
 }
 
 func TestParseErr(t *testing.T) {

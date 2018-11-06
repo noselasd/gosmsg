@@ -70,6 +70,7 @@ type Iter struct {
 type Tag struct {
 	Tag         uint16
 	Constructor bool
+	VarLen      bool
 	Data        []byte
 }
 
@@ -82,13 +83,8 @@ func (s *RawSMsg) Tags() Iter {
 	return Iter{s.Data}
 }
 
-//Skip makes the iterator skip over the next l bytes in the underlying SMsg
-func (i *Iter) Skip(l int) error {
-	if l > len(i.data) {
-		return io.ErrShortBuffer
-	}
-	i.data = i.data[l:]
-	return nil
+func (t *Tag) SubTags() Iter {
+	return Iter{t.Data}
 }
 
 //NextTag returns the next Tag in the SMsg or an error.
@@ -124,20 +120,21 @@ func (i *Iter) NextTag() (t Tag, err error) {
 			return t, io.ErrShortBuffer
 		}
 
+		data := i.data[dataStart+1:]
+		t.Data = data[:int(dataLen)]
 		if t.Constructor {
 			// assume nested tags, and start at the nested tag
-			i.data = i.data[dataStart+1:]
-			t.Data = i.data[:int(dataLen)]
+			i.data = data
 		} else {
 			//else, jump to next tag
-			t.Data = i.data[dataStart+1 : dataStart+int(dataLen)+1]
-			i.data = i.data[dataStart+1+int(dataLen):]
 
 		}
+		i.data = data[int(dataLen):]
 
 	} else { //variable length
 		i.data = i.data[1:]
 		t.Data = i.data
+		t.VarLen = true
 	}
 
 	return t, nil
