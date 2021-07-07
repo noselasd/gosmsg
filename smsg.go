@@ -15,11 +15,21 @@ type RawSMsg struct {
 const gConstructor uint16 = 0x8000
 const gVariableLen = -2
 
-func (s *RawSMsg) addImpl(tag uint16, len int, data []byte) {
-	tagHex := []byte(fmt.Sprintf("%04X", tag))
-	s.Data = append(s.Data, tagHex...)
-	if len != gVariableLen {
-		s.Data = strconv.AppendInt(s.Data, int64(len), 10)
+var gHex = [...]byte{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'}
+
+//fast implementation
+func uint16ToHex(v uint16) []byte {
+	var b []byte
+	return append(b, gHex[(v&0xf000)>>12], gHex[(v&0xf00)>>8], gHex[(v&0x00f0)>>4], gHex[(v&0x000f)])
+}
+
+func (s *RawSMsg) addImpl(tag uint16, length int, data []byte) {
+	//tagHex := []byte(fmt.Sprintf("%04X", tag))
+	//buf := []byte{'0', '0', '0'}
+
+	s.Data = append(s.Data, uint16ToHex(tag)...)
+	if length != gVariableLen {
+		s.Data = strconv.AppendInt(s.Data, int64(length), 10)
 	}
 	s.Data = append(s.Data, ' ')
 
