@@ -14,8 +14,8 @@ func TestSmsgAdd(t *testing.T) {
 	r.Add(0x10, []byte("8"))
 	r.Add(0xA, []byte(""))
 	r.Add(0x0F07, []byte("\"\""))
-
-	if string(r.Data) != "12345 Hello00101 8000A0 0F072 \"\"" {
+	r.Terminate()
+	if string(r.Data) != "12345 Hello00101 8000A0 0F072 \"\"00000 \n" {
 		t.Error(string(r.Data))
 	}
 }

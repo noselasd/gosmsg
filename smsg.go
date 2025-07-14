@@ -52,6 +52,12 @@ func (s *RawSMsg) AddRaw(tag uint16, r *RawSMsg) {
 	s.addImpl(tag|gConstructor, len(r.Data), r.Data)
 }
 
+// Terminate ends the SMsg, adding the null tag and a newline
+// Don't add more data after this
+func (s *RawSMsg) Terminate() {
+	s.addImpl(0x0000, 0, []byte{'\n'})
+}
+
 // AddSafe is a safe replacement for Add where newlines within data (\r or \n)
 // is escaped.
 func (s *RawSMsg) AddSafe(tag uint16, data []byte) {
