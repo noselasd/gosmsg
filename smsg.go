@@ -158,8 +158,8 @@ func (i *Iter) NextTag() (t Tag, err error) {
 		i.data = data[int(dataLen):]
 
 	} else { //variable length
-		i.data = i.data[1:]
-		t.Data = i.data
+		t.Data = i.data[1:]
+		i.data = []byte{}
 		t.VarLen = true
 	}
 

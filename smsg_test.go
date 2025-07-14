@@ -96,6 +96,9 @@ func TestIter(t *testing.T) {
 			t.Errorf("Got %s expected %s", &tag, &exp[i])
 			break
 		}
+		if tag.VarLen {
+			it = tag.SubTags()
+		}
 
 		if tag.Tag == 0x1222 && tag.Constructor {
 			subIter := tag.SubTags()
