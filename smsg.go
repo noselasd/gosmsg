@@ -18,8 +18,7 @@ const gVariableLen = -2
 var gHex = [...]byte{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'}
 
 // fast implementation
-func uint16ToHex(v uint16) []byte {
-	var b []byte
+func appendHexTag(b []byte, v uint16) []byte {
 	return append(b, gHex[(v&0xf000)>>12], gHex[(v&0xf00)>>8], gHex[(v&0x00f0)>>4], gHex[(v&0x000f)])
 }
 
@@ -27,12 +26,11 @@ func (s *RawSMsg) addImpl(tag uint16, length int, data []byte) {
 	//tagHex := []byte(fmt.Sprintf("%04X", tag))
 	//buf := []byte{'0', '0', '0'}
 
-	s.Data = append(s.Data, uint16ToHex(tag)...)
+	s.Data = appendHexTag(s.Data, tag)
 	if length != gVariableLen {
 		s.Data = strconv.AppendInt(s.Data, int64(length), 10)
 	}
 	s.Data = append(s.Data, ' ')
-
 	s.Data = append(s.Data, data...)
 }
 
@@ -50,6 +48,23 @@ func (s *RawSMsg) AddVariableTag(tag uint16) {
 // AddRaw adds the entire content of r as the value of a new tag
 func (s *RawSMsg) AddRaw(tag uint16, r *RawSMsg) {
 	s.addImpl(tag|gConstructor, len(r.Data), r.Data)
+}
+
+// AddTag adds a new tag
+func (s *RawSMsg) AddTag(t *Tag) {
+	if t.VarLen {
+		s.addImpl(t.Tag|gConstructor, gVariableLen, t.Data)
+	} else {
+		s.Add(t.Tag, t.Data)
+	}
+}
+
+// AddTags adds all the tags in t
+// Tag.VarLen = True implies a constructor even if Tag.Constructor is false
+func (s *RawSMsg) AddTags(t []Tag) {
+	for i := range t {
+		s.AddTag(&t[i])
+	}
 }
 
 // Terminate ends the SMsg, adding the null tag and a newline

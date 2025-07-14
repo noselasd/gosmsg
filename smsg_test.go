@@ -20,6 +20,20 @@ func TestSmsgAdd(t *testing.T) {
 	}
 }
 
+func TestSmsgAddTag(t *testing.T) {
+	var r RawSMsg
+
+	tags := []Tag{
+		{Tag: 0x1019, Constructor: true, VarLen: true},
+		{Tag: 0x1222, Data: []byte("hello")},
+		{Tag: 0x0010, Data: []byte("8")},
+	}
+	r.AddTags(tags)
+	if string(r.Data) != "9019 12225 hello00101 8" {
+		t.Error(string(r.Data))
+	}
+}
+
 func TestSmsgAddSafe(t *testing.T) {
 	var r RawSMsg
 
