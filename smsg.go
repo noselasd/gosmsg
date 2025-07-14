@@ -154,13 +154,7 @@ func (i *Iter) NextTag() (t Tag, err error) {
 
 		data := i.data[dataStart+1:]
 		t.Data = data[:int(dataLen)]
-		if t.Constructor {
-			// assume nested tags, and start at the nested tag
-			i.data = data
-		} else {
-			//else, jump to next tag
-
-		}
+		// jump to next tag
 		i.data = data[int(dataLen):]
 
 	} else { //variable length
