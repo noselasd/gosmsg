@@ -55,18 +55,18 @@ func TestSmsgAddConstructed(t *testing.T) {
 
 }
 
-func tagEqual(t1, t2 Tag) bool {
+func tagEqual(t1, t2 *Tag) bool {
 	return t1.Tag == t2.Tag && t1.Constructor == t2.Constructor && t1.VarLen == t2.VarLen &&
-		bytes.Compare(t1.Data, t2.Data) == 0
+		bytes.Equal(t1.Data, t2.Data)
 }
 func TestIter(t *testing.T) {
 	r := RawSMsg{[]byte("9019 922211 12345 Hello00101 800000 ")}
 	exp := []Tag{
-		Tag{Tag: 0x1019, Constructor: true, VarLen: true, Data: []byte("922211 12345 Hello00101 800000 ")},
-		Tag{Tag: 0x1222, Constructor: true, VarLen: false, Data: []byte("12345 Hello")},
+		{Tag: 0x1019, Constructor: true, VarLen: true, Data: []byte("922211 12345 Hello00101 800000 ")},
+		{Tag: 0x1222, Constructor: true, VarLen: false, Data: []byte("12345 Hello")},
 
-		Tag{Tag: 0x0010, Constructor: false, VarLen: false, Data: []byte("8")},
-		Tag{Tag: 0x0000, Constructor: false, VarLen: false, Data: []byte("")}}
+		{Tag: 0x0010, Constructor: false, VarLen: false, Data: []byte("8")},
+		{Tag: 0x0000, Constructor: false, VarLen: false, Data: []byte("")}}
 	expSubTag := Tag{Tag: 0x1234, Constructor: false, VarLen: false, Data: []byte("Hello")}
 
 	inSub := false
@@ -78,7 +78,7 @@ func TestIter(t *testing.T) {
 			}
 			t.Errorf("t :%X err %v\n", tag.Tag, err)
 			break
-		} else if !tagEqual(tag, exp[i]) {
+		} else if !tagEqual(&tag, &exp[i]) {
 			t.Errorf("Got %s expected %s", &tag, &exp[i])
 			break
 		}
@@ -89,7 +89,7 @@ func TestIter(t *testing.T) {
 			if subErr != nil {
 				t.Errorf("t :%X err %v\n", tag.Tag, err)
 			}
-			if !tagEqual(subTag, expSubTag) {
+			if !tagEqual(&subTag, &expSubTag) {
 				t.Errorf("Got %s expected %s", &tag, &exp[i])
 			}
 			inSub = true
@@ -164,10 +164,13 @@ func TestReader(t *testing.T) {
 	}
 
 	smsg, err := r.ReadRawSMsg()
-
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(smsg.Data) != 0 {
+		t.Fatal("expected empty line")
+	}
+
 	smsg, err = r.ReadRawSMsg()
 
 	if err != io.EOF {
