@@ -135,8 +135,8 @@ type Field struct {
 	Metadata map[string]interface{}
 
 	// Type-specific fields (discriminated by Type)
-	ValueType *Field  // Used by ArrayType and MapType
-	Fields    []Field // Used by RecordType
+	ValueType *Field  // Value type for ArrayType and MapType
+	Fields    []Field // Sub fields in a RecordType
 }
 
 // String returns a string representation of the field for debugging
@@ -179,7 +179,7 @@ func (f *Field) GetSubField(name string) (*Field, error) {
 
 // NewField creates a new field with validation
 func NewField(name string, dtype DataType, nullable bool, metadata map[string]interface{}) (*Field, error) {
-	// Validate name (except for RecordType which has relaxed rules for backward compatibility)
+	// Validate name (except for RecordType which has relaxed rules for pysmsg compatibility
 	if dtype != RecordType && !ValidName(name) {
 		return nil, &SchemaError{Message: fmt.Sprintf("%s is an invalid field name", name)}
 	}
