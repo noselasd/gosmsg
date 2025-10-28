@@ -2,6 +2,7 @@ package gosmsg
 
 import (
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 )
@@ -9,10 +10,11 @@ import (
 // Function to coerce a SMSG field to schema determined type
 type coerceFunc func(field *fieldData, val []byte) (interface{}, error)
 
+// pre-computed conversion help for a field
 type fieldData struct {
-	nullable   bool
+	isNullable bool
 	isString   bool
-	smsgTag    int
+	smsgTag    uint16
 	name       string
 	enumValues map[string]bool
 	coerceFunc coerceFunc
@@ -20,20 +22,20 @@ type fieldData struct {
 
 type schemaCoercion struct {
 	recordTypeName string
-	recordTypeTag  int
+	recordTypeTag  uint16
 	fields         []fieldData
 }
 
 type SchemaDecoder struct {
-	coercers map[int]schemaCoercion // map from record type tag to schemaCoersion
+	coercers map[uint16]schemaCoercion // map from record type tag to schemaCoersion
 }
 
-func extractSmsgTag(field *Field) (int, error) {
+func extractSmsgTag(field *Field) (uint16, error) {
 	smsg_tag, ok := field.Metadata["smsg_tag"]
 	if !ok {
 		return 0, &SchemaError{Message: fmt.Sprintf("%s is missing smsg_tag metadata", field.Name)}
 	}
-	smsg_tag_int, ok := smsg_tag.(int)
+	smsg_tag_int, ok := smsg_tag.(uint16)
 	if !ok {
 		return 0, &SchemaError{Message: fmt.Sprintf("%s smsg_tag metadata must be an int", field.Name)}
 	}
@@ -48,7 +50,7 @@ func coerceToInt(_ *fieldData, val []byte) (interface{}, error) {
 	return strconv.ParseInt(string(val), 10, 64)
 }
 
-func coerceToFloat(_ *fieldData, val []byte) (interface{}, error) {
+func coerceToFloat64(_ *fieldData, val []byte) (interface{}, error) {
 	return strconv.ParseFloat(string(val), 64)
 }
 
@@ -75,7 +77,7 @@ func newFieldData(f *Field) (*fieldData, error) {
 	var enumMap map[string]bool
 
 	switch f.Type {
-	// We convert all integers to int64, like pysmsg. This may be a mistake.
+	// We convert all integers to int64, float/double to float64 like pysmsg. This may be a mistake.
 	case EnumType:
 		enumMap = make(map[string]bool)
 		enumValues := f.Metadata["enum_values"].([]string) // schema loading validated this
@@ -86,7 +88,7 @@ func newFieldData(f *Field) (*fieldData, error) {
 	case Int8Type, Int16Type, Int32Type, Int64Type:
 		coerceFunc = coerceToInt
 	case FloatType, DoubleType:
-		coerceFunc = coerceToFloat
+		coerceFunc = coerceToFloat64
 	case BoolType:
 		coerceFunc = coerceToBool
 	case BinaryType:
@@ -98,7 +100,7 @@ func newFieldData(f *Field) (*fieldData, error) {
 	}
 
 	return &fieldData{
-		nullable:   f.Nullable,
+		isNullable: f.Nullable,
 		isString:   f.Type == StringType,
 		smsgTag:    smsg_tag,
 		name:       f.Name,
@@ -130,8 +132,57 @@ func newSchemaCoercion(s *Schema) (*schemaCoercion, error) {
 	}, nil
 }
 
+func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (map[string]interface{}, error) {
+	dc := make(map[string]interface{}, 64)
+
+	sc, ok := s.coercers[recordType.Tag]
+	if !ok {
+		return nil, &RecordTypeMismatchError{Message: fmt.Sprintf("Record tag 0x%04X does not match any schemas", recordType.Tag)}
+	}
+	for i := range sc.fields {
+		fd := &sc.fields[i]
+
+		t, ok := tags[fd.smsgTag]
+		if !ok {
+			if fd.isNullable {
+				dc[fd.name] = nil
+			} else {
+				return dc, &SchemaValidationError{Message: fmt.Sprintf("Field %s is missing from record, but not nullable", fd.name)}
+			}
+		} else {
+			val, err := fd.coerceFunc(fd, t)
+			if err != nil {
+				return dc, err
+			}
+			dc[fd.name] = val
+		}
+	}
+	return dc, nil
+}
+
+func (s *SchemaDecoder) Decode(r *RawSMsg) (map[string]interface{}, error) {
+	it := r.Tags()
+
+	recordType, err := it.NextTag()
+	if err != nil {
+		return nil, err
+	}
+	tags := make(map[uint16][]byte, 64)
+	for t, err := it.NextTag(); err != io.EOF; t, err = it.NextTag() {
+		if err != nil {
+			return nil, err
+		}
+		if t.Tag == 0 { // terminator tag
+			break
+		}
+		tags[t.Tag] = t.Data
+	}
+
+	return s.coerce(&recordType, tags)
+}
+
 func NewSchemaDecoder(schemas []Schema) (*SchemaDecoder, error) {
-	coercers := make(map[int]schemaCoercion, 64)
+	coercers := make(map[uint16]schemaCoercion, 64)
 	for i := range schemas {
 		schema := &schemas[i]
 		c, err := newSchemaCoercion(schema)
