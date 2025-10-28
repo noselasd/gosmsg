@@ -136,12 +136,14 @@ func newSchemaCoercion(s *Schema) (schemaCoercion, error) {
 }
 
 func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (map[string]interface{}, error) {
-	dc := make(map[string]interface{}, defaultCapacity)
+	//
+	// Fill out all field names from the schema, convert raw tag value to the field data type,
 
 	sc, ok := s.coercers[recordType.Tag]
 	if !ok {
 		return nil, &RecordTypeMismatchError{Message: fmt.Sprintf("Record tag 0x%04X does not match any schemas", recordType.Tag)}
 	}
+	dc := make(map[string]interface{}, len(sc.fields))
 	for i := range sc.fields {
 		fd := &sc.fields[i]
 
