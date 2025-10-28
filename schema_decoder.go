@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// Default capacity for pre-allocated maps and slices
+const defaultCapacity = 64
+
 // Function to coerce a SMSG field to schema determined type
 type coerceFunc func(field *fieldData, val []byte) (interface{}, error)
 
@@ -31,15 +34,15 @@ type SchemaDecoder struct {
 }
 
 func extractSmsgTag(field *Field) (uint16, error) {
-	smsg_tag, ok := field.Metadata["smsg_tag"]
+	smsgTag, ok := field.Metadata["smsg_tag"]
 	if !ok {
 		return 0, &SchemaError{Message: fmt.Sprintf("%s is missing smsg_tag metadata", field.Name)}
 	}
-	smsg_tag_int, ok := smsg_tag.(uint16)
+	smsgTagInt, ok := smsgTag.(uint16)
 	if !ok {
 		return 0, &SchemaError{Message: fmt.Sprintf("%s smsg_tag metadata must be an int", field.Name)}
 	}
-	return smsg_tag_int, nil
+	return smsgTagInt, nil
 }
 
 func coerceToString(_ *fieldData, val []byte) (interface{}, error) {
@@ -60,7 +63,7 @@ func coerceToBool(_ *fieldData, val []byte) (interface{}, error) {
 
 func coerceToEnum(f *fieldData, val []byte) (interface{}, error) {
 	s := string(val)
-	if _, ok := f.enumValues[s]; ok {
+	if _, ok := f.enumValues[s]; !ok {
 		return "", &SchemaValidationError{Message: fmt.Sprintf("Invalid enum value %s for %s", s, f.name)}
 	}
 	return s, nil // Guaranteed valid string at this point
@@ -68,10 +71,10 @@ func coerceToEnum(f *fieldData, val []byte) (interface{}, error) {
 func coerceToBytes(_ *fieldData, val []byte) (interface{}, error) {
 	return val, nil
 }
-func newFieldData(f *Field) (*fieldData, error) {
-	smsg_tag, err := extractSmsgTag(f)
+func newFieldData(f *Field) (fieldData, error) {
+	smsgTag, err := extractSmsgTag(f)
 	if err != nil {
-		return nil, err
+		return fieldData{}, err
 	}
 	var coerceFunc coerceFunc
 	var enumMap map[string]bool
@@ -96,44 +99,44 @@ func newFieldData(f *Field) (*fieldData, error) {
 	case StringType:
 		coerceFunc = coerceToString
 	default:
-		return nil, &SchemaError{Message: fmt.Sprintf("Type conversion of %s is not implemented", f.Name)}
+		return fieldData{}, &SchemaError{Message: fmt.Sprintf("Type conversion of %s is not implemented", f.Name)}
 	}
 
-	return &fieldData{
+	return fieldData{
 		isNullable: f.Nullable,
 		isString:   f.Type == StringType,
-		smsgTag:    smsg_tag,
+		smsgTag:    smsgTag,
 		name:       f.Name,
 		enumValues: enumMap,
 		coerceFunc: coerceFunc,
 	}, nil
 }
 
-func newSchemaCoercion(s *Schema) (*schemaCoercion, error) {
-	smsg_tag, err := extractSmsgTag(s.RecordType)
+func newSchemaCoercion(s *Schema) (schemaCoercion, error) {
+	smsgTag, err := extractSmsgTag(s.RecordType)
 	if err != nil {
-		return nil, err
+		return schemaCoercion{}, err
 	}
 
-	fields := make([]fieldData, 0, 64)
+	fields := make([]fieldData, len(s.Fields))
 	for i := range s.Fields {
 		f := &s.Fields[i]
 		d, err := newFieldData(f)
 		if err != nil {
-			return nil, err
+			return schemaCoercion{}, err
 		}
-		fields[i] = *d
+		fields[i] = d
 	}
 
-	return &schemaCoercion{
+	return schemaCoercion{
 		recordTypeName: s.RecordType.Name,
-		recordTypeTag:  smsg_tag,
+		recordTypeTag:  smsgTag,
 		fields:         fields,
 	}, nil
 }
 
 func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (map[string]interface{}, error) {
-	dc := make(map[string]interface{}, 64)
+	dc := make(map[string]interface{}, defaultCapacity)
 
 	sc, ok := s.coercers[recordType.Tag]
 	if !ok {
@@ -167,7 +170,7 @@ func (s *SchemaDecoder) Decode(r *RawSMsg) (map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	tags := make(map[uint16][]byte, 64)
+	tags := make(map[uint16][]byte, defaultCapacity)
 	for t, err := it.NextTag(); err != io.EOF; t, err = it.NextTag() {
 		if err != nil {
 			return nil, err
@@ -182,14 +185,14 @@ func (s *SchemaDecoder) Decode(r *RawSMsg) (map[string]interface{}, error) {
 }
 
 func NewSchemaDecoder(schemas []Schema) (*SchemaDecoder, error) {
-	coercers := make(map[uint16]schemaCoercion, 64)
+	coercers := make(map[uint16]schemaCoercion, len(schemas))
 	for i := range schemas {
 		schema := &schemas[i]
 		c, err := newSchemaCoercion(schema)
 		if err != nil {
 			return nil, err
 		}
-		coercers[c.recordTypeTag] = *c
+		coercers[c.recordTypeTag] = c
 	}
 
 	return &SchemaDecoder{coercers: coercers}, nil
