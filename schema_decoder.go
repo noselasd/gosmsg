@@ -38,11 +38,12 @@ func extractSmsgTag(field *Field) (uint16, error) {
 	if !ok {
 		return 0, &SchemaError{Message: fmt.Sprintf("%s is missing smsg_tag metadata", field.Name)}
 	}
-	smsgTagInt, ok := smsgTag.(uint16)
+	fmt.Printf("smsg_tag %v\n", smsgTag)
+	smsgTagInt, ok := smsgTag.(int)
 	if !ok {
-		return 0, &SchemaError{Message: fmt.Sprintf("%s smsg_tag metadata must be an int", field.Name)}
+		return 0, &SchemaError{Message: fmt.Sprintf("%s smsg_tag metadata must be an uint16", field.Name)}
 	}
-	return smsgTagInt, nil
+	return uint16(smsgTagInt), nil
 }
 
 func coerceToString(_ *fieldData, val []byte) (interface{}, error) {
@@ -165,7 +166,7 @@ func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (map[str
 	return dc, nil
 }
 
-func (s *SchemaDecoder) Decode(r *RawSMsg) (map[string]interface{}, error) {
+func (s *SchemaDecoder) Decode(r RawSMsg) (map[string]interface{}, error) {
 	it := r.Tags()
 
 	recordType, err := it.NextTag()
@@ -173,7 +174,9 @@ func (s *SchemaDecoder) Decode(r *RawSMsg) (map[string]interface{}, error) {
 		return nil, err
 	}
 	tags := make(map[uint16][]byte, defaultCapacity)
+	it = recordType.SubTags()
 	for t, err := it.NextTag(); err != io.EOF; t, err = it.NextTag() {
+		fmt.Printf("TAG: %X\n", t.Tag)
 		if err != nil {
 			return nil, err
 		}
