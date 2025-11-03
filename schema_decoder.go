@@ -12,7 +12,8 @@ const defaultCapacity = 64
 // Function to coerce a SMSG field to schema determined type
 type coerceFunc func(field *fieldData, val []byte) (interface{}, error)
 
-// pre-computed conversion help for a field
+// fieldData/schemaCoercion pre-computed conversion help for converting a field
+
 type fieldData struct {
 	isNullable bool
 	isString   bool
@@ -32,12 +33,12 @@ type SchemaDecoder struct {
 	coercers map[uint16]schemaCoercion // map from record type tag to schemaCoersion
 }
 
+// Find smsg_tag for the field
 func extractSmsgTag(field *Field) (uint16, error) {
 	smsgTag, ok := field.Metadata["smsg_tag"]
 	if !ok {
 		return 0, fmt.Errorf("%s is missing smsg_tag metadata", field.Name)
 	}
-	fmt.Printf("smsg_tag %v\n", smsgTag)
 	smsgTagInt, ok := smsgTag.(int)
 	if !ok {
 		return 0, fmt.Errorf("%s smsg_tag metadata must be an uint16", field.Name)
@@ -141,13 +142,13 @@ func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (map[str
 
 	sc, ok := s.coercers[recordType.Tag]
 	if !ok {
-		return nil, &MissingSchema{Tag: recordType.Tag}
+		return nil, &MissingSchemaError{Tag: recordType.Tag}
 	}
 	dc := make(map[string]interface{}, len(sc.fields))
 	for i := range sc.fields {
 		fd := &sc.fields[i]
 
-		val, ok := tags[fd.smsgTag]
+		rawVal, ok := tags[fd.smsgTag]
 		if !ok {
 			if fd.isNullable {
 				dc[fd.name] = nil
@@ -155,9 +156,9 @@ func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (map[str
 				return dc, fmt.Errorf("Field %s is missing from record, but not nullable", fd.name)
 			}
 		} else {
-			val, err := fd.coerceFunc(fd, val)
+			val, err := fd.coerceFunc(fd, rawVal)
 			if err != nil {
-				return dc, fmt.Errorf("converting %s value %s in %s schema failed %w", fd.name, val, sc.recordTypeName, err)
+				return dc, fmt.Errorf("failed converting %s in %s:%s : %w", rawVal, sc.recordTypeName, fd.name, err)
 			}
 			dc[fd.name] = val
 		}
@@ -165,6 +166,18 @@ func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (map[str
 	return dc, nil
 }
 
+// Decode uses the registred schemas to decode the RawSMsg and returns
+// the decoded message
+//
+// Any errors when parsing or converting the message is returned.
+// A partially decoded message might be returned even if the error is non-nil
+// If no schemas match the message, an instance of the MissingSchmaError is returned.
+// use this to check for MissingSchemaError
+//
+//	var e *MissingSchemaError
+//	if !errors.As(err, &e) {
+//	    handleMissingSchemaError(err)
+//	}
 func (s *SchemaDecoder) Decode(r RawSMsg) (map[string]interface{}, error) {
 	it := r.Tags()
 
@@ -175,7 +188,6 @@ func (s *SchemaDecoder) Decode(r RawSMsg) (map[string]interface{}, error) {
 	tags := make(map[uint16][]byte, defaultCapacity)
 	it = recordType.SubTags()
 	for t, err := it.NextTag(); err != EOS; t, err = it.NextTag() {
-		fmt.Printf("TAG: %X\n", t.Tag)
 		if err != nil {
 			return nil, err
 		}
@@ -188,6 +200,13 @@ func (s *SchemaDecoder) Decode(r RawSMsg) (map[string]interface{}, error) {
 	return s.coerce(&recordType, tags)
 }
 
+// NewSchemaDecoder returns a SchemaDecoder which can decode
+// SMSGs according to the given schemas.
+//
+// Decoding an SMSG will convert numeric tags to field names, convert the value to
+// a proper data type and fill in missing nullable fields.
+//
+// Returns error if schemas doesn't contain proper info to decode an SMSG
 func NewSchemaDecoder(schemas []Schema) (*SchemaDecoder, error) {
 	coercers := make(map[uint16]schemaCoercion, len(schemas))
 	for i := range schemas {
