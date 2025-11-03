@@ -2,7 +2,6 @@ package gosmsg
 
 import (
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 )
@@ -36,12 +35,12 @@ type SchemaDecoder struct {
 func extractSmsgTag(field *Field) (uint16, error) {
 	smsgTag, ok := field.Metadata["smsg_tag"]
 	if !ok {
-		return 0, &SchemaError{Message: fmt.Sprintf("%s is missing smsg_tag metadata", field.Name)}
+		return 0, fmt.Errorf("%s is missing smsg_tag metadata", field.Name)
 	}
 	fmt.Printf("smsg_tag %v\n", smsgTag)
 	smsgTagInt, ok := smsgTag.(int)
 	if !ok {
-		return 0, &SchemaError{Message: fmt.Sprintf("%s smsg_tag metadata must be an uint16", field.Name)}
+		return 0, fmt.Errorf("%s smsg_tag metadata must be an uint16", field.Name)
 	}
 	return uint16(smsgTagInt), nil
 }
@@ -65,7 +64,7 @@ func coerceToBool(_ *fieldData, val []byte) (interface{}, error) {
 func coerceToEnum(f *fieldData, val []byte) (interface{}, error) {
 	s := string(val)
 	if _, ok := f.enumValues[s]; !ok {
-		return "", &SchemaValidationError{Message: fmt.Sprintf("Invalid enum value %s for %s", s, f.name)}
+		return "", fmt.Errorf("invalid enum value %s for %s", s, f.name)
 	}
 	return s, nil // Guaranteed valid string at this point
 }
@@ -100,7 +99,7 @@ func newFieldData(f *Field) (fieldData, error) {
 	case StringType:
 		coerceFunc = coerceToString
 	default:
-		return fieldData{}, &SchemaError{Message: fmt.Sprintf("Type conversion of %s is not implemented", f.Name)}
+		return fieldData{}, fmt.Errorf("type conversion of %s is not implemented", f.Name)
 	}
 
 	return fieldData{
@@ -142,23 +141,23 @@ func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (map[str
 
 	sc, ok := s.coercers[recordType.Tag]
 	if !ok {
-		return nil, &RecordTypeMismatchError{Message: fmt.Sprintf("Record tag 0x%04X does not match any schemas", recordType.Tag)}
+		return nil, &MissingSchema{Tag: recordType.Tag}
 	}
 	dc := make(map[string]interface{}, len(sc.fields))
 	for i := range sc.fields {
 		fd := &sc.fields[i]
 
-		t, ok := tags[fd.smsgTag]
+		val, ok := tags[fd.smsgTag]
 		if !ok {
 			if fd.isNullable {
 				dc[fd.name] = nil
 			} else {
-				return dc, &SchemaValidationError{Message: fmt.Sprintf("Field %s is missing from record, but not nullable", fd.name)}
+				return dc, fmt.Errorf("Field %s is missing from record, but not nullable", fd.name)
 			}
 		} else {
-			val, err := fd.coerceFunc(fd, t)
+			val, err := fd.coerceFunc(fd, val)
 			if err != nil {
-				return dc, err
+				return dc, fmt.Errorf("converting %s value %s in %s schema failed %w", fd.name, val, sc.recordTypeName, err)
 			}
 			dc[fd.name] = val
 		}
@@ -175,7 +174,7 @@ func (s *SchemaDecoder) Decode(r RawSMsg) (map[string]interface{}, error) {
 	}
 	tags := make(map[uint16][]byte, defaultCapacity)
 	it = recordType.SubTags()
-	for t, err := it.NextTag(); err != io.EOF; t, err = it.NextTag() {
+	for t, err := it.NextTag(); err != EOS; t, err = it.NextTag() {
 		fmt.Printf("TAG: %X\n", t.Tag)
 		if err != nil {
 			return nil, err

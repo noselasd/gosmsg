@@ -6,6 +6,7 @@
 package gosmsg
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,33 +15,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
-
-// SchemaError represents an error when loading/parsing a Schema
-type SchemaError struct {
-	Message string
-}
-
-func (e *SchemaError) Error() string {
-	return e.Message
-}
-
-// SchemaValidationError represents an error when decoding a record fails to adhere to its schema
-type SchemaValidationError struct {
-	Message string
-}
-
-func (e *SchemaValidationError) Error() string {
-	return e.Message
-}
-
-// RecordTypeMismatchError represents an error when decoding a record type not matching the provided schema
-type RecordTypeMismatchError struct {
-	Message string
-}
-
-func (e *RecordTypeMismatchError) Error() string {
-	return e.Message
-}
 
 // DataType represents the type of a field
 type DataType int
@@ -120,7 +94,7 @@ func ToDataType(val string) (DataType, error) {
 	if dtype, ok := dataTypeMap[val]; ok {
 		return dtype, nil
 	}
-	return 0, &SchemaError{Message: fmt.Sprintf("%s is an invalid datatype", val)}
+	return 0, fmt.Errorf("%s is an invalid datatype", val)
 }
 
 // Field represents a field in a schema using a discriminated union pattern.
@@ -181,7 +155,7 @@ func (f *Field) GetSubField(name string) (*Field, error) {
 func NewField(name string, dtype DataType, nullable bool, metadata map[string]interface{}) (*Field, error) {
 	// Validate name (except for RecordType which has relaxed rules for pysmsg compatibility
 	if dtype != RecordType && !ValidName(name) {
-		return nil, &SchemaError{Message: fmt.Sprintf("%s is an invalid field name", name)}
+		return nil, fmt.Errorf("%s is an invalid field name", name)
 	}
 
 	if metadata == nil {
@@ -238,10 +212,10 @@ type Schema struct {
 // NewSchema creates a new schema with validation
 func NewSchema(recordType *Field, fields []Field, version int) (*Schema, error) {
 	if recordType.Type != RecordType {
-		return nil, &SchemaError{Message: "record_type Field must have Type=RecordType"}
+		return nil, errors.New("record_type Field must have Type=RecordType")
 	}
 	if recordType.Nullable {
-		return nil, &SchemaError{Message: "record_type Field cannot be nullable"}
+		return nil, errors.New("record_type Field cannot be nullable")
 	}
 	return &Schema{
 		RecordType: recordType,
@@ -297,25 +271,25 @@ func (s *Schema) Contains(name string) bool {
 func validateEnumMetadata(metadata map[string]interface{}) error {
 	enumValuesRaw, ok := metadata["enum_values"]
 	if !ok {
-		return &SchemaError{Message: "enum_values metadata is required for enum fields"}
+		return errors.New("enum_values metadata is required for enum fields")
 	}
 
 	enumValues, ok := enumValuesRaw.([]interface{})
 	if !ok || len(enumValues) == 0 {
-		return &SchemaError{Message: "enum_values metadata is required for enum fields"}
+		return errors.New("enum_values metadata is required for enum fields")
 	}
 
 	seen := make(map[string]bool)
 	for _, val := range enumValues {
 		strVal, ok := val.(string)
 		if !ok {
-			return &SchemaError{Message: "enum values must be strings"}
+			return errors.New("enum values must be strings")
 		}
 		if !ValidName(strVal) {
-			return &SchemaError{Message: fmt.Sprintf("%s is an invalid enum value", strVal)}
+			return fmt.Errorf("%s is an invalid enum value", strVal)
 		}
 		if seen[strVal] {
-			return &SchemaError{Message: "enum_values must be unique"}
+			return errors.New("enum_values must be unique")
 		}
 		seen[strVal] = true
 	}
@@ -327,7 +301,7 @@ func validateEnumMetadata(metadata map[string]interface{}) error {
 func buildValueType(parentName string, metadata map[string]interface{}, suffix string) (*Field, error) {
 	valueTypeRaw, ok := metadata["value_type"]
 	if !ok {
-		return nil, &SchemaError{Message: "value_type metadata is required"}
+		return nil, errors.New("value_type metadata is required")
 	}
 
 	switch vt := valueTypeRaw.(type) {
@@ -344,7 +318,7 @@ func buildValueType(parentName string, metadata map[string]interface{}, suffix s
 		}
 		return buildField(fieldMap)
 	default:
-		return nil, &SchemaError{Message: "value_type must be a string or map"}
+		return nil, errors.New("value_type must be a string or map")
 	}
 }
 
@@ -352,22 +326,22 @@ func buildValueType(parentName string, metadata map[string]interface{}, suffix s
 func buildRecordFields(metadata map[string]interface{}) ([]Field, error) {
 	fieldsList, ok := metadata["fields"]
 	if !ok {
-		return nil, &SchemaError{Message: "fields metadata is required for record fields"}
+		return nil, errors.New("fields metadata is required for record fields")
 	}
 
 	fieldMaps, ok := fieldsList.([]interface{})
 	if !ok {
-		return nil, &SchemaError{Message: "fields metadata must be a list"}
+		return nil, errors.New("fields metadata must be a list")
 	}
 
 	fields := make([]Field, 0, len(fieldMaps))
 	for _, fieldMap := range fieldMaps {
 		fm, ok := fieldMap.(map[string]interface{})
 		if !ok {
-			return nil, &SchemaError{Message: "each field must be a map"}
+			return nil, errors.New("each field must be a map")
 		}
 		if _, ok := fm["name"]; !ok {
-			return nil, &SchemaError{Message: "name is required for record fields"}
+			return nil, errors.New("name is required for record fields")
 		}
 		field, err := buildField(fm)
 		if err != nil {
@@ -384,17 +358,17 @@ func buildField(mapping map[string]interface{}) (*Field, error) {
 	// Validate required attributes
 	name, ok := mapping["name"].(string)
 	if !ok {
-		return nil, &SchemaError{Message: "name is required for fields and must be a string"}
+		return nil, errors.New("name is required for fields and must be a string")
 	}
 
 	typeStr, ok := mapping["type"].(string)
 	if !ok {
-		return nil, &SchemaError{Message: "type is required for fields and must be a string"}
+		return nil, errors.New("type is required for fields and must be a string")
 	}
 
 	nullable, ok := mapping["nullable"].(bool)
 	if !ok {
-		return nil, &SchemaError{Message: "nullable is required for fields and must be a bool"}
+		return nil, errors.New("nullable is required for fields and must be a bool")
 	}
 
 	dtype, err := ToDataType(typeStr)
@@ -429,12 +403,12 @@ func buildSchema(mapping map[string]interface{}) (*Schema, error) {
 
 	fieldsRaw, ok := mapping["fields"]
 	if !ok {
-		return nil, &SchemaError{Message: "fields is required"}
+		return nil, errors.New("fields is required")
 	}
 
 	fieldsList, ok := fieldsRaw.([]interface{})
 	if !ok {
-		return nil, &SchemaError{Message: "fields must be a list"}
+		return nil, errors.New("fields must be a list")
 	}
 
 	fields := make([]Field, 0, len(fieldsList))
@@ -443,7 +417,7 @@ func buildSchema(mapping map[string]interface{}) (*Schema, error) {
 	for _, fieldRaw := range fieldsList {
 		fieldMap, ok := fieldRaw.(map[string]interface{})
 		if !ok {
-			return nil, &SchemaError{Message: "each field must be a map"}
+			return nil, errors.New("each field must be a map")
 		}
 
 		field, err := buildField(fieldMap)
@@ -452,7 +426,7 @@ func buildSchema(mapping map[string]interface{}) (*Schema, error) {
 		}
 
 		if seen[field.Name] {
-			return nil, &SchemaError{Message: fmt.Sprintf("%s is defined multiple times", field.Name)}
+			return nil, fmt.Errorf("%s is defined multiple times", field.Name)
 		}
 		seen[field.Name] = true
 		fields = append(fields, *field)
@@ -463,7 +437,7 @@ func buildSchema(mapping map[string]interface{}) (*Schema, error) {
 		// YAML decoder will parse integers as int
 		vInt, ok := v.(int)
 		if !ok {
-			return nil, &SchemaError{Message: "version must be an integer"}
+			return nil, errors.New("version must be an integer")
 		}
 
 		version = vInt

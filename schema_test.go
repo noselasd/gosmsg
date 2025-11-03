@@ -36,7 +36,7 @@ func TestFieldConstruction(t *testing.T) {
 	metadata := map[string]interface{}{
 		"enum_values": []interface{}{"CAP", "MAP", "INAP"},
 	}
-	field, err = NewField("app", EnumType, false, metadata)
+	_, err = NewField("app", EnumType, false, metadata)
 	if err != nil {
 		t.Errorf("Valid enum failed: %v", err)
 	}

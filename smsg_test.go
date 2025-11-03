@@ -87,7 +87,7 @@ func TestIter(t *testing.T) {
 	for i, it := 0, r.Tags(); ; i++ {
 		tag, err := it.NextTag()
 		if err != nil {
-			if err == io.EOF && i == len(exp) {
+			if err == EOS && i == len(exp) {
 				break
 			}
 			t.Errorf("t :%X err %v\n", tag.Tag, err)
@@ -189,8 +189,7 @@ func TestReader(t *testing.T) {
 	}
 
 	smsg, err = r.ReadRawSMsg()
-
-	if err != io.EOF {
+	if err != EOS {
 		t.Fatal(err)
 	}
 	t.Logf("%v", smsg)

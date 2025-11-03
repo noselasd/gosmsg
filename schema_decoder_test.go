@@ -1,9 +1,11 @@
 package gosmsg
 
-import "log"
-import "strings"
-import "maps"
-import "testing"
+import (
+	"log"
+	"maps"
+	"strings"
+	"testing"
+)
 
 func TestSchemaDecode(t *testing.T) {
 
