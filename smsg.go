@@ -12,9 +12,15 @@ type RawSMsg struct {
 	Data []byte
 }
 
+// gConstructor is the bit flag (0x8000) that marks a tag as a constructor
+// (containing nested tags) rather than a simple value tag
 const gConstructor uint16 = 0x8000
+
+// gVariableLen is a sentinel value indicating a tag has variable length
+// (no explicit length field, data extends to end of current scope)
 const gVariableLen = -2
 
+// gHex is a lookup table for fast hex digit conversion without allocations
 var gHex = [...]byte{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'}
 
 // fast implementation
