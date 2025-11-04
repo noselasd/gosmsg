@@ -253,3 +253,197 @@ func NewSchemaDecoder(schemas []Schema) (*SchemaDecoder, error) {
 
 	return &SchemaDecoder{coercers: coercers}, nil
 }
+
+// ============================================================================
+// Encoding (DecodedMessage -> RawSMsg)
+// ============================================================================
+
+// SchemaEncoder encodes DecodedMessages back to RawSMsg format using schemas
+type SchemaEncoder struct {
+	schemas map[string]*Schema // map from record type name to schema
+}
+
+// Reverse coercion functions - convert Go types to byte strings
+
+func encodeInt64(v int64) []byte {
+	return []byte(strconv.FormatInt(v, 10))
+}
+
+func encodeFloat64(v float64) []byte {
+	return []byte(strconv.FormatFloat(v, 'f', -1, 64))
+}
+
+func encodeBool(v bool) []byte {
+	if v {
+		return []byte("1")
+	}
+	return []byte("0")
+}
+
+func encodeString(v string) []byte {
+	return []byte(v)
+}
+
+func encodeBytes(v []byte) []byte {
+	return v
+}
+
+// encodeValue converts a typed value to bytes according to the field schema
+func (e *SchemaEncoder) encodeValue(field *Field, value interface{}) ([]byte, error) {
+	// Handle nil for nullable fields
+	if value == nil {
+		if field.Nullable {
+			return nil, nil // Signal to skip this field
+		}
+		return nil, fmt.Errorf("field %s is not nullable but has nil value", field.Name)
+	}
+
+	switch field.Type {
+	case Int8Type, Int16Type, Int32Type, Int64Type:
+		v, ok := value.(int64)
+		if !ok {
+			return nil, fmt.Errorf("field %s: expected int64, got %T", field.Name, value)
+		}
+		return encodeInt64(v), nil
+
+	case FloatType, DoubleType:
+		v, ok := value.(float64)
+		if !ok {
+			return nil, fmt.Errorf("field %s: expected float64, got %T", field.Name, value)
+		}
+		return encodeFloat64(v), nil
+
+	case BoolType:
+		v, ok := value.(bool)
+		if !ok {
+			return nil, fmt.Errorf("field %s: expected bool, got %T", field.Name, value)
+		}
+		return encodeBool(v), nil
+
+	case StringType:
+		v, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("field %s: expected string, got %T", field.Name, value)
+		}
+		return encodeString(v), nil
+
+	case BinaryType:
+		v, ok := value.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("field %s: expected []byte, got %T", field.Name, value)
+		}
+		return encodeBytes(v), nil
+
+	case EnumType:
+		v, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("field %s: expected string (enum), got %T", field.Name, value)
+		}
+		// Validate enum value
+		enumValues := field.Metadata["enum_values"].([]interface{})
+		valid := false
+		for _, ev := range enumValues {
+			if ev.(string) == v {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return nil, fmt.Errorf("field %s: invalid enum value %q", field.Name, v)
+		}
+		return encodeString(v), nil
+
+	default:
+		return nil, fmt.Errorf("field %s: encoding type %s not yet implemented", field.Name, field.Type)
+	}
+}
+
+// Encode converts a DecodedMessage back to RawSMsg format using the schema.
+// Returns error if the message doesn't match the schema or contains invalid values.
+func (e *SchemaEncoder) Encode(msg *DecodedMessage) (*RawSMsg, error) {
+	// 1. Lookup schema by record type name
+	schema, ok := e.schemas[msg.RecordType]
+	if !ok {
+		return nil, fmt.Errorf("no schema found for record type %q", msg.RecordType)
+	}
+
+	// 2. Verify record tag matches schema
+	recordTag, err := extractSmsgTag(schema.RecordType)
+	if err != nil {
+		return nil, fmt.Errorf("schema error: %w", err)
+	}
+	if recordTag != msg.RecordTag {
+		return nil, fmt.Errorf("record tag mismatch: message has 0x%04X but schema expects 0x%04X",
+			msg.RecordTag, recordTag)
+	}
+
+	// 3. Create inner message for fields
+	var inner RawSMsg
+
+	// 4. Encode each field from schema (in schema order)
+	for i := range schema.Fields {
+		field := &schema.Fields[i]
+		value, exists := msg.Fields[field.Name]
+
+		// Handle missing or nil fields
+		if !exists || value == nil {
+			if !field.Nullable {
+				return nil, fmt.Errorf("required field %q is missing or nil", field.Name)
+			}
+			// Skip nullable fields that are missing or nil
+			continue
+		}
+
+		// Convert value to bytes
+		data, err := e.encodeValue(field, value)
+		if err != nil {
+			return nil, err
+		}
+
+		// Skip if encodeValue returned nil (shouldn't happen but be safe)
+		if data == nil {
+			continue
+		}
+
+		// Get tag from schema
+		tag, err := extractSmsgTag(field)
+		if err != nil {
+			return nil, fmt.Errorf("field %s: %w", field.Name, err)
+		}
+
+		// Add to message
+		inner.Add(tag, data)
+	}
+
+	// 5. Wrap in record type constructor (variable length)
+	var outer RawSMsg
+	outer.AddVariableTag(msg.RecordTag)
+	outer.Data = append(outer.Data, inner.Data...)
+	outer.Terminate()
+
+	return &outer, nil
+}
+
+// NewSchemaEncoder returns a SchemaEncoder which can encode
+// DecodedMessages back to RawSMsg format according to the given schemas.
+//
+// Encoding converts typed field values to byte strings and wraps them
+// with the appropriate tags based on the schema.
+//
+// Returns error if schemas are invalid.
+func NewSchemaEncoder(schemas []Schema) (*SchemaEncoder, error) {
+	schemaMap := make(map[string]*Schema, len(schemas))
+	for i := range schemas {
+		schema := &schemas[i]
+		if schema.RecordType == nil {
+			return nil, fmt.Errorf("schema %d has nil RecordType", i)
+		}
+		// Verify schema has smsg_tag
+		if _, err := extractSmsgTag(schema.RecordType); err != nil {
+			return nil, fmt.Errorf("schema %s: %w", schema.RecordType.Name, err)
+		}
+		schemaMap[schema.RecordType.Name] = schema
+	}
+
+	return &SchemaEncoder{schemas: schemaMap}, nil
+}
