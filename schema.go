@@ -151,7 +151,16 @@ func (f *Field) GetSubField(name string) (*Field, error) {
 	return nil, fmt.Errorf("field '%s' not found in record", name)
 }
 
-// NewField creates a new field with validation
+// NewField creates a new field with validation.
+// If metadata is nil, an empty metadata map will be used.
+// For certain field types, metadata is required:
+//   - EnumType: must have "enum_values" key with []string values
+//   - ArrayType/MapType: must have "value_type" key defining element/value type
+//   - RecordType (nested): must have "fields" key with nested field definitions
+//   - All field types used in decoding: must have "smsg_tag" key with uint16 tag number
+//
+// Field names must match the pattern [A-Za-z_][A-Za-z0-9_]* except for RecordType
+// which has relaxed naming rules for pysmsg compatibility.
 func NewField(name string, dtype DataType, nullable bool, metadata map[string]interface{}) (*Field, error) {
 	// Validate name (except for RecordType which has relaxed rules for pysmsg compatibility
 	if dtype != RecordType && !ValidName(name) {

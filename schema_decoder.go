@@ -84,9 +84,10 @@ func newFieldData(f *Field) (fieldData, error) {
 	// We convert all integers to int64, float/double to float64 like pysmsg. This may be a mistake.
 	case EnumType:
 		enumMap = make(map[string]bool)
-		enumValues := f.Metadata["enum_values"].([]string) // schema loading validated this
-		for _, v := range enumValues {
-			enumMap[v] = true
+		// validateEnumMetadata ensures enum_values is []interface{} containing only strings
+		enumValuesRaw := f.Metadata["enum_values"].([]interface{})
+		for _, v := range enumValuesRaw {
+			enumMap[v.(string)] = true
 		}
 		coerceFunc = coerceToEnum
 	case Int8Type, Int16Type, Int32Type, Int64Type:
