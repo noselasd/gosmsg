@@ -43,13 +43,23 @@ func TestSchemaDecode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// Verify record type info
+	if d.RecordType != "sip" {
+		t.Errorf("RecordType = %s, want sip", d.RecordType)
+	}
+	if d.RecordTag != 0x1019 {
+		t.Errorf("RecordTag = 0x%04X, want 0x1019", d.RecordTag)
+	}
+
+	// Verify fields
 	expected := map[string]any{
 		"anr":      "987",
 		"start_ts": int64(1234),
 	}
 
-	if !maps.Equal(expected, d) {
-		t.Errorf("Got %+v, expected %+v\n", d, expected)
+	if !maps.Equal(expected, d.Fields) {
+		t.Errorf("Got %+v, expected %+v\n", d.Fields, expected)
 	}
 }
 

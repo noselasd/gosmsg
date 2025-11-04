@@ -9,6 +9,24 @@ import (
 // Default capacity for pre-allocated maps and slices
 const defaultCapacity = 64
 
+// Fields represents the decoded field values in an SMSG message,
+// mapping field names to their typed values
+type Fields map[string]interface{}
+
+// DecodedMessage represents a decoded SMSG message with its record type
+// metadata and field values
+type DecodedMessage struct {
+	RecordType string // Name of the record type (e.g., "sip", "call_detail")
+	RecordTag  uint16 // Numeric tag identifying the record type (e.g., 0x1019)
+	Fields     Fields // Decoded field values keyed by field name
+}
+
+// String returns a string representation of the decoded message for debugging
+func (d *DecodedMessage) String() string {
+	return fmt.Sprintf("DecodedMessage{RecordType: %s, RecordTag: 0x%04X, Fields: %d}",
+		d.RecordType, d.RecordTag, len(d.Fields))
+}
+
 // Function to coerce a SMSG field to schema determined type
 type coerceFunc func(field *fieldData, val []byte) (interface{}, error)
 
@@ -137,7 +155,7 @@ func newSchemaCoercion(s *Schema) (schemaCoercion, error) {
 	}, nil
 }
 
-func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (map[string]interface{}, error) {
+func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (*DecodedMessage, error) {
 	//
 	// Fill out all field names from the schema, convert raw tag value to the field data type,
 
@@ -145,41 +163,55 @@ func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (map[str
 	if !ok {
 		return nil, &MissingSchemaError{Tag: recordType.Tag}
 	}
-	dc := make(map[string]interface{}, len(sc.fields))
+
+	fields := make(Fields, len(sc.fields))
 	for i := range sc.fields {
 		fd := &sc.fields[i]
 
 		rawVal, ok := tags[fd.smsgTag]
 		if !ok {
 			if fd.isNullable {
-				dc[fd.name] = nil
+				fields[fd.name] = nil
 			} else {
-				return dc, fmt.Errorf("Field %s is missing from record, but not nullable", fd.name)
+				return &DecodedMessage{
+					RecordType: sc.recordTypeName,
+					RecordTag:  recordType.Tag,
+					Fields:     fields,
+				}, fmt.Errorf("Field %s is missing from record, but not nullable", fd.name)
 			}
 		} else {
 			val, err := fd.coerceFunc(fd, rawVal)
 			if err != nil {
-				return dc, fmt.Errorf("failed converting %s in %s:%s : %w", rawVal, sc.recordTypeName, fd.name, err)
+				return &DecodedMessage{
+					RecordType: sc.recordTypeName,
+					RecordTag:  recordType.Tag,
+					Fields:     fields,
+				}, fmt.Errorf("failed converting %s in %s:%s : %w", rawVal, sc.recordTypeName, fd.name, err)
 			}
-			dc[fd.name] = val
+			fields[fd.name] = val
 		}
 	}
-	return dc, nil
+
+	return &DecodedMessage{
+		RecordType: sc.recordTypeName,
+		RecordTag:  recordType.Tag,
+		Fields:     fields,
+	}, nil
 }
 
 // Decode uses the registred schemas to decode the RawSMsg and returns
-// the decoded message
+// the decoded message with record type information and field values.
 //
 // Any errors when parsing or converting the message is returned.
-// A partially decoded message might be returned even if the error is non-nil
-// If no schemas match the message, an instance of the MissingSchmaError is returned.
-// use this to check for MissingSchemaError
+// A partially decoded message might be returned even if the error is non-nil.
+// If no schemas match the message, an instance of the MissingSchemaError is returned.
+// Use this to check for MissingSchemaError:
 //
 //	var e *MissingSchemaError
-//	if !errors.As(err, &e) {
+//	if errors.As(err, &e) {
 //	    handleMissingSchemaError(err)
 //	}
-func (s *SchemaDecoder) Decode(r RawSMsg) (map[string]interface{}, error) {
+func (s *SchemaDecoder) Decode(r RawSMsg) (*DecodedMessage, error) {
 	it := r.Tags()
 
 	recordType, err := it.NextTag()
