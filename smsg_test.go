@@ -87,7 +87,7 @@ func TestIter(t *testing.T) {
 	for i, it := 0, r.Tags(); ; i++ {
 		tag, err := it.NextTag()
 		if err != nil {
-			if err == io.EOF && i == len(exp) {
+			if err == EOS && i == len(exp) {
 				break
 			}
 			t.Errorf("t :%X err %v\n", tag.Tag, err)
@@ -189,10 +189,28 @@ func TestReader(t *testing.T) {
 	}
 
 	smsg, err = r.ReadRawSMsg()
-
-	if err != io.EOF {
+	if err != EOS {
 		t.Fatal(err)
 	}
 	t.Logf("%v", smsg)
+}
+func TestReaderMissingNewline(t *testing.T) {
+	msg := []byte("10015 hello")
+	b := bytes.NewBuffer(msg)
 
+	r := NewRawSMsgReader(b)
+	smsg, err := r.ReadRawSMsg()
+	t.Logf("%s", smsg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// We should still get the data available
+	if string(smsg.Data) != "10015 hello" {
+		t.Fatalf("expected %s", msg)
+	}
+
+	smsg, err = r.ReadRawSMsg()
+	if err != EOS {
+		t.Fatal(err)
+	}
 }

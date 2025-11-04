@@ -120,10 +120,10 @@ func (t *Tag) SubTags() Iter {
 }
 
 // NextTag returns the next Tag in the SMsg or an error.
-// io.EOF is returned when there is no more tags to iterate
+// gosmsg.EOS is returned when there is no more tags to iterate
 func (i *Iter) NextTag() (t Tag, err error) {
 	if len(i.data) < 4 { //tag
-		return t, io.EOF
+		return t, EOS
 	}
 
 	tag, err := strconv.ParseUint(string(i.data[:4]), 16, 16)
@@ -186,7 +186,7 @@ func NewRawSMsgReader(r io.Reader) RawSMsgReader {
 }
 
 // ReadRawSMsg returns the next RawSmsg or an error.
-// error will be io.EOF when the end is reached
+// error will be gosmsg.EOS when the end of the io.Reader is reached
 // The returned RawSmsg could be empty if an empty line
 // is encountered.
 func (r *RawSMsgReader) ReadRawSMsg() (RawSMsg, error) {
@@ -202,7 +202,9 @@ func (r *RawSMsgReader) ReadRawSMsg() (RawSMsg, error) {
 			}
 		}
 	} else if err == nil {
-		err = io.ErrUnexpectedEOF
+		err = ErrUnexpectedEnd
+	} else if err == io.EOF {
+		err = EOS
 	}
 
 	r.lastError = err
