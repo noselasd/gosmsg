@@ -193,5 +193,24 @@ func TestReader(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("%v", smsg)
+}
+func TestReaderMissingNewline(t *testing.T) {
+	msg := []byte("10015 hello")
+	b := bytes.NewBuffer(msg)
 
+	r := NewRawSMsgReader(b)
+	smsg, err := r.ReadRawSMsg()
+	t.Logf("%s", smsg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// We should still get the data available
+	if string(smsg.Data) != "10015 hello" {
+		t.Fatalf("expected %s", msg)
+	}
+
+	smsg, err = r.ReadRawSMsg()
+	if err != EOS {
+		t.Fatal(err)
+	}
 }

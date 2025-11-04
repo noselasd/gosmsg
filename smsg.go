@@ -186,7 +186,7 @@ func NewRawSMsgReader(r io.Reader) RawSMsgReader {
 }
 
 // ReadRawSMsg returns the next RawSmsg or an error.
-// error will be gosmsg.EOS when the end is reached
+// error will be gosmsg.EOS when the end of the io.Reader is reached
 // The returned RawSmsg could be empty if an empty line
 // is encountered.
 func (r *RawSMsgReader) ReadRawSMsg() (RawSMsg, error) {

@@ -6,7 +6,9 @@ import (
 )
 
 var (
-	EOS              = errors.New("end of SMSG")
+	// Indicates normal end of an SMSG
+	EOS = errors.New("end of SMSG")
+	// Indicates underlying reader returned 0 bytes
 	ErrUnexpectedEnd = errors.New("unexpected end of SMSG")
 )
 
