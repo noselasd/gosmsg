@@ -38,29 +38,20 @@ import (
 )
 
 var (
-	namespace   = flag.String("namespace", "", "Avro namespace for the schema")
-	noMetadata  = flag.Bool("no-metadata", false, "Exclude UTEL:metadata from output")
-	showHelp    = flag.Bool("help", false, "Show help message")
-	showVersion = flag.Bool("version", false, "Show version information")
+	namespace  = flag.String("namespace", "", "Avro namespace for the schema")
+	noMetadata = flag.Bool("no-metadata", false, "Exclude UTEL:metadata from output")
+	showHelp   = flag.Bool("help", false, "Show help message")
 )
-
-const version = "1.0.0"
 
 func main() {
 	flag.Usage = usage
 	flag.Parse()
-
-	if *showVersion {
-		fmt.Fprintf(os.Stderr, "smsg2avro version %s\n", version)
-		os.Exit(0)
-	}
 
 	if *showHelp {
 		usage()
 		os.Exit(0)
 	}
 
-	// Check for schema file argument
 	if flag.NArg() != 1 {
 		fmt.Fprintf(os.Stderr, "Error: exactly one schema file argument required\n\n")
 		usage()
@@ -69,14 +60,12 @@ func main() {
 
 	schemaFile := flag.Arg(0)
 
-	// Load the SMSG schema
 	schema, err := gosmsg.LoadSchema(schemaFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading schema from %s: %v\n", schemaFile, err)
 		os.Exit(1)
 	}
 
-	// Convert to Avro schema
 	addMetadata := !*noMetadata
 	avroJSON, err := gosmsg.SchemaToAvroJSON(schema, *namespace, addMetadata)
 	if err != nil {
@@ -84,7 +73,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Output to stdout
 	fmt.Println(avroJSON)
 }
 
