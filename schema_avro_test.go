@@ -8,7 +8,7 @@ import (
 )
 
 // Helper function to validate Avro schema using hamba/avro
-func validateAvroSchema(t *testing.T, avroSchema map[string]interface{}) avro.Schema {
+func validateAvroSchema(t *testing.T, avroSchema map[string]any) avro.Schema {
 	t.Helper()
 
 	// Marshal to JSON
@@ -32,7 +32,7 @@ func TestSimpleTypesConversion(t *testing.T) {
 		fieldType     DataType
 		nullable      bool
 		expectedAvro  string
-		expectedAvro2 interface{} // For complex types
+		expectedAvro2 any // For complex types
 	}{
 		{"bool", BoolType, false, "boolean", nil},
 		{"int8", Int8Type, false, "int", nil},
@@ -43,8 +43,8 @@ func TestSimpleTypesConversion(t *testing.T) {
 		{"float", FloatType, false, "float", nil},
 		{"double", DoubleType, false, "double", nil},
 		{"binary", BinaryType, false, "bytes", nil},
-		{"nullable_string", StringType, true, "", []interface{}{"null", "string"}},
-		{"nullable_int", Int32Type, true, "", []interface{}{"null", "int"}},
+		{"nullable_string", StringType, true, "", []any{"null", "string"}},
+		{"nullable_int", Int32Type, true, "", []any{"null", "int"}},
 	}
 
 	for _, tt := range tests {
@@ -61,9 +61,9 @@ func TestSimpleTypesConversion(t *testing.T) {
 
 			if tt.nullable {
 				// Check union type
-				typeVal, ok := avroField["type"].([]interface{})
+				typeVal, ok := avroField["type"].([]any)
 				if !ok {
-					t.Fatalf("Expected type to be []interface{} for nullable field, got %T", avroField["type"])
+					t.Fatalf("Expected type to be []any for nullable field, got %T", avroField["type"])
 				}
 				if len(typeVal) != 2 || typeVal[0] != "null" {
 					t.Errorf("Expected nullable union [null, type], got %v", typeVal)
@@ -108,9 +108,9 @@ func TestTimestampLogicalTypes(t *testing.T) {
 				t.Fatalf("Failed to convert field to Avro: %v", err)
 			}
 
-			typeMap, ok := avroField["type"].(map[string]interface{})
+			typeMap, ok := avroField["type"].(map[string]any)
 			if !ok {
-				t.Fatalf("Expected type to be map[string]interface{}, got %T", avroField["type"])
+				t.Fatalf("Expected type to be map[string]any, got %T", avroField["type"])
 			}
 
 			if typeMap["logicalType"] != tt.logicalType {
@@ -125,8 +125,8 @@ func TestTimestampLogicalTypes(t *testing.T) {
 }
 
 func TestEnumConversion(t *testing.T) {
-	enumValues := []interface{}{"RED", "GREEN", "BLUE"}
-	metadata := map[string]interface{}{
+	enumValues := []any{"RED", "GREEN", "BLUE"}
+	metadata := map[string]any{
 		"enum_values": enumValues,
 		"smsg_tag":    0x100,
 	}
@@ -141,9 +141,9 @@ func TestEnumConversion(t *testing.T) {
 		t.Fatalf("Failed to convert enum field to Avro: %v", err)
 	}
 
-	typeMap, ok := avroField["type"].(map[string]interface{})
+	typeMap, ok := avroField["type"].(map[string]any)
 	if !ok {
-		t.Fatalf("Expected type to be map[string]interface{}, got %T", avroField["type"])
+		t.Fatalf("Expected type to be map[string]any, got %T", avroField["type"])
 	}
 
 	if typeMap["type"] != "enum" {
@@ -165,7 +165,7 @@ func TestEnumConversion(t *testing.T) {
 }
 
 func TestArrayConversion(t *testing.T) {
-	metadata := map[string]interface{}{
+	metadata := map[string]any{
 		"value_type": "string",
 		"smsg_tag":   0x200,
 	}
@@ -180,9 +180,9 @@ func TestArrayConversion(t *testing.T) {
 		t.Fatalf("Failed to convert array field to Avro: %v", err)
 	}
 
-	typeMap, ok := avroField["type"].(map[string]interface{})
+	typeMap, ok := avroField["type"].(map[string]any)
 	if !ok {
-		t.Fatalf("Expected type to be map[string]interface{}, got %T", avroField["type"])
+		t.Fatalf("Expected type to be map[string]any, got %T", avroField["type"])
 	}
 
 	if typeMap["type"] != "array" {
@@ -191,9 +191,9 @@ func TestArrayConversion(t *testing.T) {
 
 	// When value_type is a simple string, it defaults to nullable
 	// So we expect a union: ["null", "string"]
-	items, ok := typeMap["items"].([]interface{})
+	items, ok := typeMap["items"].([]any)
 	if !ok {
-		t.Fatalf("Expected items to be []interface{} for nullable value type, got %T", typeMap["items"])
+		t.Fatalf("Expected items to be []any for nullable value type, got %T", typeMap["items"])
 	}
 	if len(items) != 2 || items[0] != "null" || items[1] != "string" {
 		t.Errorf("Expected items ['null', 'string'], got %v", items)
@@ -205,7 +205,7 @@ func TestArrayConversion(t *testing.T) {
 }
 
 func TestMapConversion(t *testing.T) {
-	metadata := map[string]interface{}{
+	metadata := map[string]any{
 		"value_type": "int64",
 		"smsg_tag":   0x300,
 	}
@@ -220,9 +220,9 @@ func TestMapConversion(t *testing.T) {
 		t.Fatalf("Failed to convert map field to Avro: %v", err)
 	}
 
-	typeMap, ok := avroField["type"].(map[string]interface{})
+	typeMap, ok := avroField["type"].(map[string]any)
 	if !ok {
-		t.Fatalf("Expected type to be map[string]interface{}, got %T", avroField["type"])
+		t.Fatalf("Expected type to be map[string]any, got %T", avroField["type"])
 	}
 
 	if typeMap["type"] != "map" {
@@ -231,9 +231,9 @@ func TestMapConversion(t *testing.T) {
 
 	// When value_type is a simple string, it defaults to nullable
 	// So we expect a union: ["null", "long"]
-	values, ok := typeMap["values"].([]interface{})
+	values, ok := typeMap["values"].([]any)
 	if !ok {
-		t.Fatalf("Expected values to be []interface{} for nullable value type, got %T", typeMap["values"])
+		t.Fatalf("Expected values to be []any for nullable value type, got %T", typeMap["values"])
 	}
 	if len(values) != 2 || values[0] != "null" || values[1] != "long" {
 		t.Errorf("Expected values ['null', 'long'], got %v", values)
@@ -245,15 +245,15 @@ func TestMapConversion(t *testing.T) {
 }
 
 func TestNestedRecordConversion(t *testing.T) {
-	metadata := map[string]interface{}{
+	metadata := map[string]any{
 		"smsg_tag": 0x400,
-		"fields": []interface{}{
-			map[string]interface{}{
+		"fields": []any{
+			map[string]any{
 				"name":     "lat",
 				"type":     "double",
 				"nullable": false,
 			},
-			map[string]interface{}{
+			map[string]any{
 				"name":     "lon",
 				"type":     "double",
 				"nullable": false,
@@ -271,9 +271,9 @@ func TestNestedRecordConversion(t *testing.T) {
 		t.Fatalf("Failed to convert record field to Avro: %v", err)
 	}
 
-	typeMap, ok := avroField["type"].(map[string]interface{})
+	typeMap, ok := avroField["type"].(map[string]any)
 	if !ok {
-		t.Fatalf("Expected type to be map[string]interface{}, got %T", avroField["type"])
+		t.Fatalf("Expected type to be map[string]any, got %T", avroField["type"])
 	}
 
 	if typeMap["type"] != "record" {
@@ -284,9 +284,9 @@ func TestNestedRecordConversion(t *testing.T) {
 		t.Errorf("Expected name 'location', got %v", typeMap["name"])
 	}
 
-	fields, ok := typeMap["fields"].([]map[string]interface{})
+	fields, ok := typeMap["fields"].([]map[string]any)
 	if !ok {
-		t.Fatalf("Expected fields to be []map[string]interface{}, got %T", typeMap["fields"])
+		t.Fatalf("Expected fields to be []map[string]any, got %T", typeMap["fields"])
 	}
 
 	if len(fields) != 2 {
@@ -303,7 +303,7 @@ func TestNestedRecordConversion(t *testing.T) {
 }
 
 func TestMetadataConversion(t *testing.T) {
-	metadata := map[string]interface{}{
+	metadata := map[string]any{
 		"description": "User ID field",
 		"smsg_tag":    0x500,
 		"custom_prop": "custom_value",
@@ -325,9 +325,9 @@ func TestMetadataConversion(t *testing.T) {
 	}
 
 	// Check UTEL:metadata (should exclude description)
-	utelMeta, ok := avroField["UTEL:metadata"].(map[string]interface{})
+	utelMeta, ok := avroField["UTEL:metadata"].(map[string]any)
 	if !ok {
-		t.Fatalf("Expected UTEL:metadata to be map[string]interface{}, got %T", avroField["UTEL:metadata"])
+		t.Fatalf("Expected UTEL:metadata to be map[string]any, got %T", avroField["UTEL:metadata"])
 	}
 
 	if _, hasDesc := utelMeta["description"]; hasDesc {
@@ -345,7 +345,7 @@ func TestMetadataConversion(t *testing.T) {
 
 func TestSchemaToAvro(t *testing.T) {
 	// Create a schema with multiple field types
-	recordMetadata := map[string]interface{}{
+	recordMetadata := map[string]any{
 		"description": "Test record schema",
 		"smsg_tag":    0x1000,
 	}
@@ -358,13 +358,13 @@ func TestSchemaToAvro(t *testing.T) {
 	fields := []Field{}
 
 	// Add various field types
-	field1, _ := NewField("id", Int64Type, false, map[string]interface{}{"smsg_tag": 0x1001})
+	field1, _ := NewField("id", Int64Type, false, map[string]any{"smsg_tag": 0x1001})
 	fields = append(fields, *field1)
 
-	field2, _ := NewField("name", StringType, true, map[string]interface{}{"smsg_tag": 0x1002})
+	field2, _ := NewField("name", StringType, true, map[string]any{"smsg_tag": 0x1002})
 	fields = append(fields, *field2)
 
-	field3, _ := NewField("score", DoubleType, false, map[string]interface{}{"smsg_tag": 0x1003})
+	field3, _ := NewField("score", DoubleType, false, map[string]any{"smsg_tag": 0x1003})
 	fields = append(fields, *field3)
 
 	schema, err := NewSchema(recordType, fields, 1)
@@ -400,14 +400,14 @@ func TestSchemaToAvro(t *testing.T) {
 }
 
 func TestSchemaToAvroJSON(t *testing.T) {
-	recordType, err := NewField("simple_record", RecordType, false, map[string]interface{}{
+	recordType, err := NewField("simple_record", RecordType, false, map[string]any{
 		"smsg_tag": 0x2000,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create record type: %v", err)
 	}
 
-	field1, _ := NewField("message", StringType, false, map[string]interface{}{"smsg_tag": 0x2001})
+	field1, _ := NewField("message", StringType, false, map[string]any{"smsg_tag": 0x2001})
 	fields := []Field{*field1}
 
 	schema, err := NewSchema(recordType, fields, 1)
@@ -421,7 +421,7 @@ func TestSchemaToAvroJSON(t *testing.T) {
 	}
 
 	// Parse back to verify it's valid JSON
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	if err := json.Unmarshal([]byte(jsonStr), &parsed); err != nil {
 		t.Fatalf("Failed to parse generated JSON: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestSchemaToAvroJSON(t *testing.T) {
 
 func TestComplexSchemaValidation(t *testing.T) {
 	// Create a complex schema similar to the SIP example in architecture.md
-	recordMetadata := map[string]interface{}{
+	recordMetadata := map[string]any{
 		"description": "SIP call record",
 		"smsg_tag":    0x1019,
 	}
@@ -448,45 +448,45 @@ func TestComplexSchemaValidation(t *testing.T) {
 	fields := []Field{}
 
 	// start_ts: int64, not nullable
-	f1, _ := NewField("start_ts", Int64Type, false, map[string]interface{}{"smsg_tag": 0x1020})
+	f1, _ := NewField("start_ts", Int64Type, false, map[string]any{"smsg_tag": 0x1020})
 	fields = append(fields, *f1)
 
 	// duration: int32, nullable
-	f2, _ := NewField("duration", Int32Type, true, map[string]interface{}{"smsg_tag": 0x1021})
+	f2, _ := NewField("duration", Int32Type, true, map[string]any{"smsg_tag": 0x1021})
 	fields = append(fields, *f2)
 
 	// caller: string, not nullable
-	f3, _ := NewField("caller", StringType, false, map[string]interface{}{"smsg_tag": 0x1030})
+	f3, _ := NewField("caller", StringType, false, map[string]any{"smsg_tag": 0x1030})
 	fields = append(fields, *f3)
 
 	// app: enum, not nullable
-	f4, _ := NewField("app", EnumType, false, map[string]interface{}{
+	f4, _ := NewField("app", EnumType, false, map[string]any{
 		"smsg_tag":    0x1040,
-		"enum_values": []interface{}{"CAP", "MAP", "INAP"},
+		"enum_values": []any{"CAP", "MAP", "INAP"},
 	})
 	fields = append(fields, *f4)
 
 	// headers: map of string, nullable
-	f5, _ := NewField("headers", MapType, true, map[string]interface{}{
+	f5, _ := NewField("headers", MapType, true, map[string]any{
 		"smsg_tag":   0x1050,
 		"value_type": "string",
 	})
 	fields = append(fields, *f5)
 
 	// call_legs: array of records, not nullable
-	f6, _ := NewField("call_legs", ArrayType, false, map[string]interface{}{
+	f6, _ := NewField("call_legs", ArrayType, false, map[string]any{
 		"smsg_tag": 0x1060,
-		"value_type": map[string]interface{}{
+		"value_type": map[string]any{
 			"type":     "record",
 			"nullable": false,
-			"metadata": map[string]interface{}{
-				"fields": []interface{}{
-					map[string]interface{}{
+			"metadata": map[string]any{
+				"fields": []any{
+					map[string]any{
 						"name":     "direction",
 						"type":     "string",
 						"nullable": false,
 					},
-					map[string]interface{}{
+					map[string]any{
 						"name":     "number",
 						"type":     "string",
 						"nullable": false,
@@ -530,7 +530,7 @@ func TestErrorCases(t *testing.T) {
 	})
 
 	t.Run("enum_without_values", func(t *testing.T) {
-		field, _ := NewField("bad_enum", EnumType, false, map[string]interface{}{
+		field, _ := NewField("bad_enum", EnumType, false, map[string]any{
 			"smsg_tag": 0x100,
 		})
 		_, err := FieldToAvro(field, false)
@@ -545,7 +545,7 @@ func TestErrorCases(t *testing.T) {
 			Name:      "bad_array",
 			Type:      ArrayType,
 			Nullable:  false,
-			Metadata:  map[string]interface{}{"smsg_tag": 0x200},
+			Metadata:  map[string]any{"smsg_tag": 0x200},
 			ValueType: nil,
 		}
 		_, err := FieldToAvro(field, false)
@@ -560,7 +560,7 @@ func TestErrorCases(t *testing.T) {
 			Name:      "bad_map",
 			Type:      MapType,
 			Nullable:  false,
-			Metadata:  map[string]interface{}{"smsg_tag": 0x300},
+			Metadata:  map[string]any{"smsg_tag": 0x300},
 			ValueType: nil,
 		}
 		_, err := FieldToAvro(field, false)
@@ -575,7 +575,7 @@ func TestErrorCases(t *testing.T) {
 			Name:     "bad_record",
 			Type:     RecordType,
 			Nullable: false,
-			Metadata: map[string]interface{}{"smsg_tag": 0x400},
+			Metadata: map[string]any{"smsg_tag": 0x400},
 			Fields:   []Field{},
 		}
 		_, err := FieldToAvro(field, false)

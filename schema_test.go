@@ -33,8 +33,8 @@ func TestFieldConstruction(t *testing.T) {
 	}
 
 	// Valid enum
-	metadata := map[string]interface{}{
-		"enum_values": []interface{}{"CAP", "MAP", "INAP"},
+	metadata := map[string]any{
+		"enum_values": []any{"CAP", "MAP", "INAP"},
 	}
 	_, err = NewField("app", EnumType, false, metadata)
 	if err != nil {
@@ -43,7 +43,7 @@ func TestFieldConstruction(t *testing.T) {
 }
 
 func TestSchemaConstruction(t *testing.T) {
-	recordType, err := NewField("test", RecordType, false, map[string]interface{}{
+	recordType, err := NewField("test", RecordType, false, map[string]any{
 		"smsg_tag": 0x1234,
 	})
 	if err != nil {
@@ -588,7 +588,7 @@ func TestFieldString(t *testing.T) {
 	}
 
 	// Array field
-	arrayField, _ := NewField("items", ArrayType, true, map[string]interface{}{
+	arrayField, _ := NewField("items", ArrayType, true, map[string]any{
 		"value_type": "int32",
 	})
 	s = arrayField.String()

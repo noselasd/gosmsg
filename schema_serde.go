@@ -11,7 +11,7 @@ const defaultCapacity = 64
 
 // Fields represents the decoded field values in an SMSG message,
 // mapping field names to their typed values
-type Fields map[string]interface{}
+type Fields map[string]any
 
 // DecodedMessage represents a decoded SMSG message with its record type
 // metadata and field values
@@ -28,7 +28,7 @@ func (d *DecodedMessage) String() string {
 }
 
 // Function to coerce a SMSG field to schema determined type
-type coerceFunc func(field *fieldData, val []byte) (interface{}, error)
+type coerceFunc func(field *fieldData, val []byte) (any, error)
 
 // fieldData/schemaCoercion pre-computed conversion help for converting a field
 
@@ -64,30 +64,30 @@ func extractSmsgTag(field *Field) (uint16, error) {
 	return uint16(smsgTagInt), nil
 }
 
-func coerceToString(_ *fieldData, val []byte) (interface{}, error) {
+func coerceToString(_ *fieldData, val []byte) (any, error) {
 	return strings.ToValidUTF8(string(val), "?"), nil
 }
 
-func coerceToInt(_ *fieldData, val []byte) (interface{}, error) {
+func coerceToInt(_ *fieldData, val []byte) (any, error) {
 	return strconv.ParseInt(string(val), 10, 64)
 }
 
-func coerceToFloat64(_ *fieldData, val []byte) (interface{}, error) {
+func coerceToFloat64(_ *fieldData, val []byte) (any, error) {
 	return strconv.ParseFloat(string(val), 64)
 }
 
-func coerceToBool(_ *fieldData, val []byte) (interface{}, error) {
+func coerceToBool(_ *fieldData, val []byte) (any, error) {
 	return val[0] != '0', nil
 }
 
-func coerceToEnum(f *fieldData, val []byte) (interface{}, error) {
+func coerceToEnum(f *fieldData, val []byte) (any, error) {
 	s := string(val)
 	if _, ok := f.enumValues[s]; !ok {
 		return "", fmt.Errorf("invalid enum value %s for %s", s, f.name)
 	}
 	return s, nil // Guaranteed valid string at this point
 }
-func coerceToBytes(_ *fieldData, val []byte) (interface{}, error) {
+func coerceToBytes(_ *fieldData, val []byte) (any, error) {
 	return val, nil
 }
 func newFieldData(f *Field) (fieldData, error) {
@@ -102,8 +102,8 @@ func newFieldData(f *Field) (fieldData, error) {
 	// We convert all integers to int64, float/double to float64 like pysmsg. This may be a mistake.
 	case EnumType:
 		enumMap = make(map[string]bool)
-		// validateEnumMetadata ensures enum_values is []interface{} containing only strings
-		enumValuesRaw := f.Metadata["enum_values"].([]interface{})
+		// validateEnumMetadata ensures enum_values is []any containing only strings
+		enumValuesRaw := f.Metadata["enum_values"].([]any)
 		for _, v := range enumValuesRaw {
 			enumMap[v.(string)] = true
 		}
@@ -289,7 +289,7 @@ func encodeBytes(v []byte) []byte {
 }
 
 // encodeValue converts a typed value to bytes according to the field schema
-func (e *SchemaEncoder) encodeValue(field *Field, value interface{}) ([]byte, error) {
+func (e *SchemaEncoder) encodeValue(field *Field, value any) ([]byte, error) {
 	// Handle nil for nullable fields
 	if value == nil {
 		if field.Nullable {
@@ -340,7 +340,7 @@ func (e *SchemaEncoder) encodeValue(field *Field, value interface{}) ([]byte, er
 			return nil, fmt.Errorf("field %s: expected string (enum), got %T", field.Name, value)
 		}
 		// Validate enum value
-		enumValues := field.Metadata["enum_values"].([]interface{})
+		enumValues := field.Metadata["enum_values"].([]any)
 		valid := false
 		for _, ev := range enumValues {
 			if ev.(string) == v {

@@ -31,13 +31,13 @@ var gosmsgToAvroLogicalType = map[DataType]string{
 
 // addMetadata adds UTEL:metadata to the avro element, excluding description
 // which is already added as 'doc'
-func addMetadata(smsgMetadata map[string]interface{}, avroElement map[string]interface{}) {
+func addMetadata(smsgMetadata map[string]any, avroElement map[string]any) {
 	if smsgMetadata == nil {
 		return
 	}
 
 	// Remove description from metadata as it's already added to the avro element
-	filtered := make(map[string]interface{})
+	filtered := make(map[string]any)
 	for k, v := range smsgMetadata {
 		if k != "description" {
 			filtered[k] = v
@@ -50,7 +50,7 @@ func addMetadata(smsgMetadata map[string]interface{}, avroElement map[string]int
 }
 
 // addDoc adds the 'doc' field if description exists in metadata
-func addDoc(field *Field, avroElement map[string]interface{}) {
+func addDoc(field *Field, avroElement map[string]any) {
 	if doc, ok := field.Metadata["description"].(string); ok && doc != "" {
 		avroElement["doc"] = doc
 	}
@@ -58,7 +58,7 @@ func addDoc(field *Field, avroElement map[string]interface{}) {
 
 // getAvroTypeForValueType gets the Avro type for array items or map values.
 // This handles nullable value types properly by creating a union with null if needed.
-func getAvroTypeForValueType(field *Field, addMetadataFlag bool) (interface{}, error) {
+func getAvroTypeForValueType(field *Field, addMetadataFlag bool) (any, error) {
 	if field == nil {
 		return nil, &SchemaConversionError{Message: "value type field cannot be nil"}
 	}
@@ -70,15 +70,15 @@ func getAvroTypeForValueType(field *Field, addMetadataFlag bool) (interface{}, e
 		}
 	}
 
-	var typeValue interface{}
+	var typeValue any
 
 	if logicalType, hasLogical := gosmsgToAvroLogicalType[field.Type]; hasLogical {
-		typeValue = map[string]interface{}{
+		typeValue = map[string]any{
 			"logicalType": logicalType,
 			"type":        avroType,
 		}
 	} else if field.Type == EnumType {
-		enumValues, ok := field.Metadata["enum_values"].([]interface{})
+		enumValues, ok := field.Metadata["enum_values"].([]any)
 		if !ok {
 			return nil, &SchemaConversionError{
 				Message: fmt.Sprintf("enum field %s must have enum_values in metadata", field.Name),
@@ -96,7 +96,7 @@ func getAvroTypeForValueType(field *Field, addMetadataFlag bool) (interface{}, e
 			symbols[i] = s
 		}
 
-		typeValue = map[string]interface{}{
+		typeValue = map[string]any{
 			"type":    avroType,
 			"name":    field.Name,
 			"symbols": symbols,
@@ -108,7 +108,7 @@ func getAvroTypeForValueType(field *Field, addMetadataFlag bool) (interface{}, e
 			}
 		}
 
-		avroFields := make([]map[string]interface{}, len(field.Fields))
+		avroFields := make([]map[string]any, len(field.Fields))
 		for i, f := range field.Fields {
 			af, err := FieldToAvro(&f, addMetadataFlag)
 			if err != nil {
@@ -117,7 +117,7 @@ func getAvroTypeForValueType(field *Field, addMetadataFlag bool) (interface{}, e
 			avroFields[i] = af
 		}
 
-		typeValue = map[string]interface{}{
+		typeValue = map[string]any{
 			"name":   field.Name,
 			"type":   avroType,
 			"fields": avroFields,
@@ -127,14 +127,14 @@ func getAvroTypeForValueType(field *Field, addMetadataFlag bool) (interface{}, e
 	}
 
 	if field.Nullable {
-		return []interface{}{"null", typeValue}, nil
+		return []any{"null", typeValue}, nil
 	}
 
 	return typeValue, nil
 }
 
 // addAvroType adds the type information to the avro field
-func addAvroType(field *Field, avroField map[string]interface{}, addMetadataFlag bool) error {
+func addAvroType(field *Field, avroField map[string]any, addMetadataFlag bool) error {
 	avroType, ok := gosmsgToAvroTypeMap[field.Type]
 	if !ok {
 		return &SchemaConversionError{
@@ -142,17 +142,17 @@ func addAvroType(field *Field, avroField map[string]interface{}, addMetadataFlag
 		}
 	}
 
-	var typeValue interface{}
+	var typeValue any
 
 	// Handle logical types (timestamps)
 	if logicalType, hasLogical := gosmsgToAvroLogicalType[field.Type]; hasLogical {
-		typeValue = map[string]interface{}{
+		typeValue = map[string]any{
 			"logicalType": logicalType,
 			"type":        avroType,
 		}
 	} else if field.Type == EnumType {
 		// Enum type
-		enumValues, ok := field.Metadata["enum_values"].([]interface{})
+		enumValues, ok := field.Metadata["enum_values"].([]any)
 		if !ok {
 			return &SchemaConversionError{
 				Message: fmt.Sprintf("enum field %s must have enum_values in metadata", field.Name),
@@ -170,7 +170,7 @@ func addAvroType(field *Field, avroField map[string]interface{}, addMetadataFlag
 			symbols[i] = s
 		}
 
-		typeValue = map[string]interface{}{
+		typeValue = map[string]any{
 			"type":    avroType,
 			"name":    field.Name,
 			"symbols": symbols,
@@ -189,10 +189,10 @@ func addAvroType(field *Field, avroField map[string]interface{}, addMetadataFlag
 			return err
 		}
 
-		typeValue = map[string]interface{}{
+		typeValue = map[string]any{
 			"type":    avroType,
 			"items":   itemType,
-			"default": []interface{}{},
+			"default": []any{},
 		}
 	} else if field.Type == MapType {
 		if field.ValueType == nil {
@@ -208,10 +208,10 @@ func addAvroType(field *Field, avroField map[string]interface{}, addMetadataFlag
 			return err
 		}
 
-		typeValue = map[string]interface{}{
+		typeValue = map[string]any{
 			"type":    avroType,
 			"values":  valueType,
-			"default": map[string]interface{}{},
+			"default": map[string]any{},
 		}
 	} else if field.Type == RecordType {
 		if len(field.Fields) == 0 {
@@ -220,7 +220,7 @@ func addAvroType(field *Field, avroField map[string]interface{}, addMetadataFlag
 			}
 		}
 
-		avroFields := make([]map[string]interface{}, len(field.Fields))
+		avroFields := make([]map[string]any, len(field.Fields))
 		for i, f := range field.Fields {
 			af, err := FieldToAvro(&f, addMetadataFlag)
 			if err != nil {
@@ -229,7 +229,7 @@ func addAvroType(field *Field, avroField map[string]interface{}, addMetadataFlag
 			avroFields[i] = af
 		}
 
-		typeValue = map[string]interface{}{
+		typeValue = map[string]any{
 			"name":   field.Name,
 			"type":   avroType,
 			"fields": avroFields,
@@ -239,7 +239,7 @@ func addAvroType(field *Field, avroField map[string]interface{}, addMetadataFlag
 	}
 
 	if field.Nullable {
-		avroField["type"] = []interface{}{"null", typeValue}
+		avroField["type"] = []any{"null", typeValue}
 		avroField["default"] = nil
 	} else {
 		avroField["type"] = typeValue
@@ -258,12 +258,12 @@ func addAvroType(field *Field, avroField map[string]interface{}, addMetadataFlag
 //   - A map representing the Avro field with keys: "name", "doc" (optional),
 //     "type", "logicalType" (optional), and "UTEL:metadata" (optional)
 //   - An error if the field cannot be converted
-func FieldToAvro(field *Field, addMetadataFlag bool) (map[string]interface{}, error) {
+func FieldToAvro(field *Field, addMetadataFlag bool) (map[string]any, error) {
 	if field == nil {
 		return nil, &SchemaConversionError{Message: "field cannot be nil"}
 	}
 
-	avroField := map[string]interface{}{
+	avroField := map[string]any{
 		"name": field.Name,
 	}
 
@@ -294,9 +294,9 @@ func FieldToAvro(field *Field, addMetadataFlag bool) (map[string]interface{}, er
 //   - addMetadataFlag: If true, add UTEL:metadata node to fields
 //
 // Returns:
-//   - An Avro schema as a map[string]interface{}
+//   - An Avro schema as a map[string]any
 //   - An error if the schema cannot be converted
-func SchemaToAvro(schema *Schema, namespace string, addMetadataFlag bool) (map[string]interface{}, error) {
+func SchemaToAvro(schema *Schema, namespace string, addMetadataFlag bool) (map[string]any, error) {
 	if schema == nil {
 		return nil, &SchemaConversionError{Message: "schema cannot be nil"}
 	}
@@ -305,7 +305,7 @@ func SchemaToAvro(schema *Schema, namespace string, addMetadataFlag bool) (map[s
 		return nil, &SchemaConversionError{Message: "schema.RecordType cannot be nil"}
 	}
 
-	avroSchema := map[string]interface{}{
+	avroSchema := map[string]any{
 		"name": schema.RecordType.Name,
 		"type": "record", // All smsg schemas are Avro record types
 	}
@@ -320,7 +320,7 @@ func SchemaToAvro(schema *Schema, namespace string, addMetadataFlag bool) (map[s
 		addMetadata(schema.RecordType.Metadata, avroSchema)
 	}
 
-	avroFields := make([]map[string]interface{}, len(schema.Fields))
+	avroFields := make([]map[string]any, len(schema.Fields))
 	for i, field := range schema.Fields {
 		avroField, err := FieldToAvro(&field, addMetadataFlag)
 		if err != nil {

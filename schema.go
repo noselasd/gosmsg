@@ -106,7 +106,7 @@ type Field struct {
 	Name     string
 	Type     DataType
 	Nullable bool
-	Metadata map[string]interface{}
+	Metadata map[string]any
 
 	// Type-specific fields (discriminated by Type)
 	ValueType *Field  // Value type for ArrayType and MapType
@@ -161,14 +161,14 @@ func (f *Field) GetSubField(name string) (*Field, error) {
 //
 // Field names must match the pattern [A-Za-z_][A-Za-z0-9_]* except for RecordType
 // which has relaxed naming rules for pysmsg compatibility.
-func NewField(name string, dtype DataType, nullable bool, metadata map[string]interface{}) (*Field, error) {
+func NewField(name string, dtype DataType, nullable bool, metadata map[string]any) (*Field, error) {
 	// Validate name (except for RecordType which has relaxed rules for pysmsg compatibility
 	if dtype != RecordType && !ValidName(name) {
 		return nil, fmt.Errorf("%s is an invalid field name", name)
 	}
 
 	if metadata == nil {
-		metadata = make(map[string]interface{})
+		metadata = make(map[string]any)
 	}
 
 	field := &Field{
@@ -277,13 +277,13 @@ func (s *Schema) Contains(name string) bool {
 }
 
 // validateEnumMetadata validates enum field metadata
-func validateEnumMetadata(metadata map[string]interface{}) error {
+func validateEnumMetadata(metadata map[string]any) error {
 	enumValuesRaw, ok := metadata["enum_values"]
 	if !ok {
 		return errors.New("enum_values metadata is required for enum fields")
 	}
 
-	enumValues, ok := enumValuesRaw.([]interface{})
+	enumValues, ok := enumValuesRaw.([]any)
 	if !ok || len(enumValues) == 0 {
 		return errors.New("enum_values metadata is required for enum fields")
 	}
@@ -307,20 +307,20 @@ func validateEnumMetadata(metadata map[string]interface{}) error {
 }
 
 // buildValueType builds a value type field for array/map fields
-func buildValueType(parentName string, metadata map[string]interface{}, suffix string) (*Field, error) {
+func buildValueType(parentName string, metadata map[string]any, suffix string) (*Field, error) {
 	valueTypeRaw, ok := metadata["value_type"]
 	if !ok {
 		return nil, errors.New("value_type metadata is required")
 	}
 
 	switch vt := valueTypeRaw.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		if _, hasName := vt["name"]; !hasName {
 			vt["name"] = fmt.Sprintf("%s_%s", parentName, suffix)
 		}
 		return buildField(vt)
 	case string:
-		fieldMap := map[string]interface{}{
+		fieldMap := map[string]any{
 			"name":     fmt.Sprintf("%s_%s", parentName, suffix),
 			"type":     vt,
 			"nullable": true,
@@ -332,20 +332,20 @@ func buildValueType(parentName string, metadata map[string]interface{}, suffix s
 }
 
 // buildRecordFields builds the fields list for a record field
-func buildRecordFields(metadata map[string]interface{}) ([]Field, error) {
+func buildRecordFields(metadata map[string]any) ([]Field, error) {
 	fieldsList, ok := metadata["fields"]
 	if !ok {
 		return nil, errors.New("fields metadata is required for record fields")
 	}
 
-	fieldMaps, ok := fieldsList.([]interface{})
+	fieldMaps, ok := fieldsList.([]any)
 	if !ok {
 		return nil, errors.New("fields metadata must be a list")
 	}
 
 	fields := make([]Field, 0, len(fieldMaps))
 	for _, fieldMap := range fieldMaps {
-		fm, ok := fieldMap.(map[string]interface{})
+		fm, ok := fieldMap.(map[string]any)
 		if !ok {
 			return nil, errors.New("each field must be a map")
 		}
@@ -363,7 +363,7 @@ func buildRecordFields(metadata map[string]interface{}) ([]Field, error) {
 }
 
 // buildField builds a field from a map representation
-func buildField(mapping map[string]interface{}) (*Field, error) {
+func buildField(mapping map[string]any) (*Field, error) {
 	// Validate required attributes
 	name, ok := mapping["name"].(string)
 	if !ok {
@@ -385,24 +385,24 @@ func buildField(mapping map[string]interface{}) (*Field, error) {
 		return nil, err
 	}
 
-	metadata, _ := mapping["metadata"].(map[string]interface{})
+	metadata, _ := mapping["metadata"].(map[string]any)
 	if metadata == nil {
-		metadata = make(map[string]interface{})
+		metadata = make(map[string]any)
 	}
 
 	return NewField(name, dtype, nullable, metadata)
 }
 
 // buildSchema builds a schema from a map representation
-func buildSchema(mapping map[string]interface{}) (*Schema, error) {
+func buildSchema(mapping map[string]any) (*Schema, error) {
 	recordTypeName, ok := mapping["recordtype"].(string)
 	if !ok {
 		recordTypeName = "unknown"
 	}
 
-	metadata, _ := mapping["metadata"].(map[string]interface{})
+	metadata, _ := mapping["metadata"].(map[string]any)
 	if metadata == nil {
-		metadata = make(map[string]interface{})
+		metadata = make(map[string]any)
 	}
 
 	recordType, err := NewField(recordTypeName, RecordType, false, metadata)
@@ -415,7 +415,7 @@ func buildSchema(mapping map[string]interface{}) (*Schema, error) {
 		return nil, errors.New("fields is required")
 	}
 
-	fieldsList, ok := fieldsRaw.([]interface{})
+	fieldsList, ok := fieldsRaw.([]any)
 	if !ok {
 		return nil, errors.New("fields must be a list")
 	}
@@ -424,7 +424,7 @@ func buildSchema(mapping map[string]interface{}) (*Schema, error) {
 	seen := make(map[string]bool)
 
 	for _, fieldRaw := range fieldsList {
-		fieldMap, ok := fieldRaw.(map[string]interface{})
+		fieldMap, ok := fieldRaw.(map[string]any)
 		if !ok {
 			return nil, errors.New("each field must be a map")
 		}
@@ -458,7 +458,7 @@ func buildSchema(mapping map[string]interface{}) (*Schema, error) {
 // LoadSchemaFromReader loads a schema from an io.Reader
 func LoadSchemaFromReader(r io.Reader) (*Schema, error) {
 	decoder := yaml.NewDecoder(r)
-	var mapping map[string]interface{}
+	var mapping map[string]any
 	if err := decoder.Decode(&mapping); err != nil {
 		return nil, err
 	}
