@@ -20,3 +20,12 @@ type MissingSchemaError struct {
 func (e *MissingSchemaError) Error() string {
 	return fmt.Sprintf("tag 0x%04X does not match any schemas", e.Tag)
 }
+
+// SchemaConversionError represents an error during schema conversion
+type SchemaConversionError struct {
+	Message string
+}
+
+func (e *SchemaConversionError) Error() string {
+	return e.Message
+}
