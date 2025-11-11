@@ -1,0 +1,39 @@
+recordtype: test_record
+version: 1
+metadata:
+  description: "Test schema for smsg2avro tool"
+  smsg_tag: 0x1000
+fields:
+  - name: id
+    nullable: false
+    type: int64
+    metadata:
+      smsg_tag: 0x1001
+      description: "Unique identifier"
+
+  - name: name
+    nullable: false
+    type: string
+    metadata:
+      smsg_tag: 0x1002
+      description: "Name field"
+
+  - name: score
+    nullable: true
+    type: double
+    metadata:
+      smsg_tag: 0x1003
+
+  - name: status
+    nullable: false
+    type: enum
+    metadata:
+      smsg_tag: 0x1004
+      enum_values: ["ACTIVE", "INACTIVE", "PENDING"]
+
+  - name: tags
+    nullable: true
+    type: array
+    metadata:
+      smsg_tag: 0x1005
+      value_type: string
