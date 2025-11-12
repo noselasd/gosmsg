@@ -214,3 +214,66 @@ func TestReaderMissingNewline(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// ============================================================================
+// Edge Case Tests - Demonstrating Bugs
+// ============================================================================
+
+// TestParseErrNoSpaceAfterTag tests that NextTag properly handles tags at EOF.
+// This test originally demonstrated Issue 3a where the function would panic.
+// After the fix, it now properly returns io.ErrShortBuffer for incomplete tags.
+func TestParseErrNoSpaceAfterTag(t *testing.T) {
+	// Tag without space or data following it (exactly 4 bytes)
+	r := RawSMsg{[]byte("1001")}
+
+	it := r.Tags()
+	_, err := it.NextTag()
+
+	// Should return a proper error (io.ErrShortBuffer)
+	if err == nil {
+		t.Error("Expected error for tag without space/data, got nil")
+	}
+	if err != io.ErrShortBuffer {
+		t.Errorf("Expected io.ErrShortBuffer, got: %v", err)
+	}
+	t.Logf("Error: %v", err)
+}
+
+// TestParseErrTagAtEOF tests various edge cases where tags are incomplete
+// or malformed at end of message. All should return proper errors.
+func TestParseErrTagAtEOF(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		desc string
+	}{
+		{
+			name: "tag_only_no_space",
+			data: []byte("1001"),
+			desc: "Valid tag hex but no space after",
+		},
+		{
+			name: "tag_with_partial_length",
+			data: []byte("10011"),
+			desc: "Tag followed by single digit but no space",
+		},
+		{
+			name: "empty_after_tag",
+			data: []byte("ABCD"),
+			desc: "Valid hex tag but nothing following",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := RawSMsg{tt.data}
+			it := r.Tags()
+			_, err := it.NextTag()
+
+			if err == nil {
+				t.Errorf("Expected error for %s, got nil", tt.desc)
+			}
+			t.Logf("%s - Error (if no panic): %v", tt.desc, err)
+		})
+	}
+}

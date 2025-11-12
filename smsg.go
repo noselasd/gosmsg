@@ -141,6 +141,10 @@ func (i *Iter) NextTag() (t Tag, err error) {
 	t.Constructor = uint16(tag)&gConstructor != 0
 	t.Tag = uint16(tag) & ^gConstructor
 
+	if len(i.data) == 0 {
+		return t, io.ErrShortBuffer
+	}
+
 	if i.data[0] != ' ' {
 		dataStart := bytes.IndexByte(i.data, ' ')
 		if dataStart == -1 {
