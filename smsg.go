@@ -27,6 +27,11 @@ const (
 	// gVariableLen is a sentinel value indicating a tag has variable length
 	// (no explicit length field, data extends to end of current scope)
 	gVariableLen = -2
+
+	// DefaultMaxMsgSize is the default maximum size for a single SMSG message.
+	// This protects against memory exhaustion attacks from maliciously large messages.
+	// Set to 10MB which is reasonable for most SMSG use cases.
+	DefaultMaxMsgSize = 10 * 1024 * 1024
 )
 
 // gHex is a lookup table for fast hex digit conversion without allocations
@@ -251,27 +256,37 @@ func (i *Iter) NextTag() (t Tag, err error) {
 type RawSMsgReader struct {
 	// R is the underlying buffered reader used to read SMSG messages
 	R *bufio.Reader
+
+	// MaxMsgSize is the maximum allowed size for a single message in bytes.
+	// Defaults to DefaultMaxMessageSize
+	MaxMsgSize int
+
+	// wraps the original reader and enforces size limits
+	lr *io.LimitedReader
 }
 
 // NewRawSMsgReader returns a new RawSMsgReader that reads from r.
-// If r is already a *bufio.Reader, it is used directly; otherwise,
-// r is wrapped in a new *bufio.Reader for efficient reading.
 //
 // The returned RawSMsgReader is not safe for concurrent use.
-// Do not call ReadRawSMsg from multiple goroutines simultaneously.
+//
+// The MaxMessageSize field is set to DefaultMaxMessageSize and can be adjusted
+// after creation if needed.
 func NewRawSMsgReader(r io.Reader) RawSMsgReader {
-	rr := RawSMsgReader{}
-	if bufR, ok := r.(*bufio.Reader); ok {
-		rr.R = bufR
-	} else {
-		rr.R = bufio.NewReader(r)
+	// Create a LimitedReader that wraps the input reader
+	lr := &io.LimitedReader{R: r, N: 0}
+
+	// Create a buffered reader wrapping the limited reader
+	return RawSMsgReader{
+		R:          bufio.NewReader(lr),
+		MaxMsgSize: DefaultMaxMsgSize,
+		lr:         lr,
 	}
-	return rr
 }
 
 // ReadRawSMsg returns the next RawSMsg from the stream or an error.
 // Returns EOS when the end of the stream is reached.
 // Returns ErrUnexpectedEnd if the stream ends unexpectedly.
+// Returns MessageTooLargeError if the message exceeds MaxMessageSize.
 //
 // The returned RawSMsg may be empty if an empty line is encountered in the stream.
 // Line endings (\r\n or \n) are automatically stripped from the returned message.
@@ -279,7 +294,18 @@ func NewRawSMsgReader(r io.Reader) RawSMsgReader {
 // If data is available when EOF is encountered, the data is returned with a nil error.
 // The EOF will be returned on the subsequent call to ReadRawSMsg.
 func (r *RawSMsgReader) ReadRawSMsg() (RawSMsg, error) {
+	// Reset the size limit before each read
+	r.lr.N = int64(r.MaxMsgSize + 1)
+
 	l, err := r.R.ReadBytes('\n')
+
+	// Check if message exceeds size limit
+	if r.MaxMsgSize > 0 && len(l) > r.MaxMsgSize {
+		return RawSMsg{}, &MessageTooLargeError{
+			Size:    len(l),
+			MaxSize: r.MaxMsgSize,
+		}
+	}
 
 	if len(l) > 0 {
 		// Got data, strip line endings

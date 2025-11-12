@@ -29,3 +29,13 @@ type SchemaConversionError struct {
 func (e *SchemaConversionError) Error() string {
 	return e.Message
 }
+
+// MessageTooLargeError represents an error when a message exceeds the maximum allowed size
+type MessageTooLargeError struct {
+	Size    int // Actual size of the message in bytes
+	MaxSize int // Maximum allowed size in bytes
+}
+
+func (e *MessageTooLargeError) Error() string {
+	return fmt.Sprintf("message size %d bytes exceeds maximum of %d bytes", e.Size, e.MaxSize)
+}

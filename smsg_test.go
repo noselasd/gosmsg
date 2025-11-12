@@ -2,6 +2,7 @@ package gosmsg
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"strconv"
 	"testing"
@@ -275,6 +276,102 @@ func TestParseErrTagAtEOF(t *testing.T) {
 			}
 			t.Logf("%s - Error (if no panic): %v", tt.desc, err)
 		})
+	}
+}
+
+// ============================================================================
+// Message Size Limit Tests
+// ============================================================================
+
+// TestMessageSizeLimit tests that messages exceeding MaxMessageSize are rejected
+func TestMessageSizeLimit(t *testing.T) {
+	// Create a message just under the limit (100 bytes)
+	smallMsg := make([]byte, 90)
+	for i := range smallMsg {
+		smallMsg[i] = 'A'
+	}
+	smallMsg = append(smallMsg, '\n')
+
+	// Create a message over the limit (200 bytes, limit is 100)
+	largeMsg := make([]byte, 190)
+	for i := range largeMsg {
+		largeMsg[i] = 'B'
+	}
+	largeMsg = append(largeMsg, '\n')
+
+	// Combine messages
+	buf := bytes.NewBuffer(append(smallMsg, largeMsg...))
+
+	reader := NewRawSMsgReader(buf)
+	reader.MaxMsgSize = 100 // Set custom limit
+
+	// First message should succeed (under limit)
+	msg1, err := reader.ReadRawSMsg()
+	if err != nil {
+		t.Fatalf("Expected first message to succeed, got error: %v", err)
+	}
+	if len(msg1.Data) != 90 {
+		t.Errorf("Expected message length 90, got %d", len(msg1.Data))
+	}
+
+	// Second message should fail (over limit)
+	_, err = reader.ReadRawSMsg()
+	if err == nil {
+		t.Fatal("Expected error for oversized message, got nil")
+	}
+
+	var tooLargeErr *MessageTooLargeError
+	if !errors.As(err, &tooLargeErr) {
+		t.Fatalf("Expected MessageTooLargeError, got: %T", err)
+	}
+	if tooLargeErr.MaxSize != 100 {
+		t.Errorf("Expected MaxSize=100, got %d", tooLargeErr.MaxSize)
+	}
+}
+
+// TestMessageSizeDefaultLimit tests that the default limit is applied
+func TestMessageSizeDefaultLimit(t *testing.T) {
+	// Create a small message
+	smallMsg := []byte("10015 hello \n")
+
+	buf := bytes.NewBuffer(smallMsg)
+	reader := NewRawSMsgReader(buf)
+
+	// Should have default limit set
+	if reader.MaxMsgSize != DefaultMaxMsgSize {
+		t.Errorf("Expected default limit %d, got %d", DefaultMaxMsgSize, reader.MaxMsgSize)
+	}
+
+	// Should succeed with small message
+	_, err := reader.ReadRawSMsg()
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+}
+
+// TestMessageSizeAtBoundary tests messages exactly at the size limit
+func TestMessageSizeAtBoundary(t *testing.T) {
+	limit := 100
+
+	// Message exactly at limit (100 bytes including newline)
+	atLimit := make([]byte, 99)
+	for i := range atLimit {
+		atLimit[i] = 'A'
+	}
+	atLimit = append(atLimit, '\n')
+
+	buf := bytes.NewBuffer(atLimit)
+	reader := NewRawSMsgReader(buf)
+	reader.MaxMsgSize = limit
+
+	// Should succeed (at limit, not exceeding)
+	msg, err := reader.ReadRawSMsg()
+	if err != nil {
+		t.Fatalf("Expected success for message at limit, got error: %v", err)
+	}
+	// After stripping newline, should be 99 bytes
+	if len(msg.Data) != 99 {
+		t.Errorf("Expected message length 99, got %d", len(msg.Data))
 	}
 }
 
