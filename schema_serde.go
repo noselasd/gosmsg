@@ -179,6 +179,18 @@ func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (*Decode
 					Fields:     fields,
 				}, fmt.Errorf("Field %s is missing from record, but not nullable", fd.name)
 			}
+		} else if len(rawVal) == 0 {
+			if fd.isString {
+				fields[fd.name] = ""
+			} else if fd.isNullable {
+				fields[fd.name] = nil
+			} else {
+				return &DecodedMessage{
+					RecordType: sc.recordTypeName,
+					RecordTag:  recordType.Tag,
+					Fields:     fields,
+				}, fmt.Errorf("Field %s is missing from record, but not nullable", fd.name)
+			}
 		} else {
 			val, err := fd.coerceFunc(fd, rawVal)
 			if err != nil {
