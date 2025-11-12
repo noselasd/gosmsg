@@ -375,6 +375,30 @@ func TestMessageSizeAtBoundary(t *testing.T) {
 	}
 }
 
+// TestEmptyMessages tests reading consecutive empty messages (just newlines)
+func TestEmptyMessages(t *testing.T) {
+	// Three consecutive newlines
+	buf := bytes.NewBuffer([]byte("\n\n\n"))
+	reader := NewRawSMsgReader(buf)
+
+	// Read three empty messages
+	for i := 0; i < 3; i++ {
+		msg, err := reader.ReadRawSMsg()
+		if err != nil {
+			t.Fatalf("Read %d: expected success, got error: %v", i+1, err)
+		}
+		if len(msg.Data) != 0 {
+			t.Errorf("Read %d: expected empty message, got %d bytes", i+1, len(msg.Data))
+		}
+	}
+
+	// Fourth read should be EOS
+	_, err := reader.ReadRawSMsg()
+	if err != EOS {
+		t.Errorf("Expected EOS, got: %v", err)
+	}
+}
+
 // ============================================================================
 // Additional Error Path Tests - Common Real-World Scenarios
 // ============================================================================
