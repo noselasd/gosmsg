@@ -1,8 +1,13 @@
-// Package schema provides types and functions for working with SMSG record schemas.
+// Package gosmsg provides types and functions for working with SMSG (Structured Message)
+// format, a tag-based binary protocol used in Utel systems.
 //
-// Schemas define the structure and types of fields in SMSG records, supporting
-// basic types (int, string, bool, etc.) as well as complex types like arrays,
-// maps, and nested records.
+// The package supports:
+//   - Low-level SMSG message construction and parsing (RawSMsg, Tag, Iter)
+//   - Schema-based type-safe encoding and decoding (Schema, SchemaDecoder, SchemaEncoder)
+//   - YAML-based schema definitions with support for complex types
+//
+// Basic types supported: bool, int8/16/32/64, float, double, string, binary, timestamps, enums
+// Complex types supported: arrays, maps, and nested records
 package gosmsg
 
 import (
@@ -16,7 +21,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// DataType represents the type of a field
+// DataType represents the type of a field in an SMSG schema.
+// Each DataType corresponds to a specific data encoding and decoding strategy.
 type DataType int
 
 const (
@@ -73,7 +79,8 @@ var dataTypeMap = map[string]DataType{
 	"record":       RecordType,
 }
 
-// String returns the string representation of a DataType
+// String returns the string representation of a DataType.
+// Returns "DataType(N)" for unknown types.
 func (dt DataType) String() string {
 	if name, ok := dataTypeNames[dt]; ok {
 		return name
@@ -81,15 +88,23 @@ func (dt DataType) String() string {
 	return fmt.Sprintf("DataType(%d)", dt)
 }
 
-// Allowed field names (for Avro compatibility)
+// namesRegex defines allowed field names (for Avro compatibility).
+// Field names must start with a letter or underscore, followed by
+// letters, digits, or underscores.
 var namesRegex = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-// ValidName checks if a name is valid
+// ValidName checks if a name is valid according to schema naming rules.
+// Valid names must match the pattern: [A-Za-z_][A-Za-z0-9_]*
+// This ensures compatibility with Avro and other schema systems.
 func ValidName(name string) bool {
 	return namesRegex.MatchString(name)
 }
 
-// ToDataType converts a string to a DataType
+// ToDataType converts a string to a DataType.
+// Returns an error if the string does not match any known data type.
+// Supported type strings: "bool", "int8", "int16", "int32", "int64",
+// "string", "float", "double", "timestamp_ms", "timestamp_us",
+// "enum", "array", "map", "record"
 func ToDataType(val string) (DataType, error) {
 	if dtype, ok := dataTypeMap[val]; ok {
 		return dtype, nil
@@ -113,7 +128,9 @@ type Field struct {
 	Fields    []Field // Sub fields in a RecordType
 }
 
-// String returns a string representation of the field for debugging
+// String returns a string representation of the field for debugging.
+// The format includes the field name, type, and nullability status.
+// For complex types (array, map, record), additional structure info is included.
 func (f *Field) String() string {
 	nullable := "nullable"
 	if !f.Nullable {
@@ -138,7 +155,11 @@ func (f *Field) String() string {
 	}
 }
 
-// GetSubField returns a nested field by name (only valid for RecordType fields)
+// GetSubField returns a nested field by name from a RecordType field.
+// Returns an error if this field is not a RecordType or if the named field
+// is not found within the record.
+//
+// This method is only valid for fields of type RecordType.
 func (f *Field) GetSubField(name string) (*Field, error) {
 	if f.Type != RecordType {
 		return nil, fmt.Errorf("GetSubField only valid for RecordType, got %s", f.Type)
@@ -211,14 +232,19 @@ func NewField(name string, dtype DataType, nullable bool, metadata map[string]an
 	return field, nil
 }
 
-// Schema represents a schema for SMSG records
+// Schema represents a schema definition for SMSG records.
+// A schema consists of a record type definition, a list of fields,
+// and a version number. Schemas are typically loaded from YAML files
+// and used for type-safe encoding and decoding of SMSG messages.
 type Schema struct {
-	RecordType *Field
-	Fields     []Field
-	Version    int
+	RecordType *Field  // The root record type definition (must be RecordType, non-nullable)
+	Fields     []Field // Top-level fields in the schema
+	Version    int     // Schema version number
 }
 
-// NewSchema creates a new schema with validation
+// NewSchema creates a new schema with validation.
+// The recordType must be a non-nullable RecordType field.
+// Returns an error if validation fails.
 func NewSchema(recordType *Field, fields []Field, version int) (*Schema, error) {
 	if recordType.Type != RecordType {
 		return nil, errors.New("record_type Field must have Type=RecordType")
@@ -233,7 +259,8 @@ func NewSchema(recordType *Field, fields []Field, version int) (*Schema, error) 
 	}, nil
 }
 
-// String returns a string representation of the schema
+// String returns a string representation of the schema for debugging.
+// Includes the record type name, version, and a list of all fields.
 func (s *Schema) String() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Schema{RecordType: %s, Version: %d, Fields: [\n", s.RecordType.Name, s.Version))
@@ -244,7 +271,8 @@ func (s *Schema) String() string {
 	return sb.String()
 }
 
-// GetField returns a field by name from the schema
+// GetField returns a field by name from the schema's top-level fields.
+// Returns an error if no field with the given name exists.
 func (s *Schema) GetField(name string) (*Field, error) {
 	for i := range s.Fields {
 		if s.Fields[i].Name == name {
@@ -254,8 +282,9 @@ func (s *Schema) GetField(name string) (*Field, error) {
 	return nil, fmt.Errorf("field '%s' not found in schema", name)
 }
 
-// SetField sets or updates a field in the schema
-// If a field with the same name exists, it is updated; otherwise, it is appended
+// SetField sets or updates a field in the schema.
+// If a field with the same name already exists, it is replaced.
+// Otherwise, the field is appended to the schema's field list.
 func (s *Schema) SetField(field Field) {
 	for i := range s.Fields {
 		if s.Fields[i].Name == field.Name {
@@ -266,7 +295,8 @@ func (s *Schema) SetField(field Field) {
 	s.Fields = append(s.Fields, field)
 }
 
-// Contains checks if a field with the given name exists in the schema
+// Contains checks if a field with the given name exists in the schema's
+// top-level fields. Returns true if found, false otherwise.
 func (s *Schema) Contains(name string) bool {
 	for i := range s.Fields {
 		if s.Fields[i].Name == name {
@@ -455,7 +485,14 @@ func buildSchema(mapping map[string]any) (*Schema, error) {
 	return NewSchema(recordType, fields, version)
 }
 
-// LoadSchemaFromReader loads a schema from an io.Reader
+// LoadSchemaFromReader loads a schema definition from a YAML stream.
+// The YAML format should include:
+//   - recordtype: the name of the record type
+//   - version: schema version number (optional, defaults to 0)
+//   - metadata: metadata map (must include "smsg_tag" for the record type)
+//   - fields: list of field definitions
+//
+// Returns an error if the YAML is invalid or schema validation fails.
 func LoadSchemaFromReader(r io.Reader) (*Schema, error) {
 	decoder := yaml.NewDecoder(r)
 	var mapping map[string]any
@@ -465,7 +502,11 @@ func LoadSchemaFromReader(r io.Reader) (*Schema, error) {
 	return buildSchema(mapping)
 }
 
-// LoadSchema loads a schema from a file
+// LoadSchema loads a schema definition from a YAML file.
+// This is a convenience wrapper around LoadSchemaFromReader that
+// handles file opening and closing.
+//
+// Returns an error if the file cannot be opened or if schema loading fails.
 func LoadSchema(filename string) (*Schema, error) {
 	file, err := os.Open(filename)
 	if err != nil {
