@@ -179,8 +179,7 @@ func (i *Iter) NextTag() (t Tag, err error) {
 // RawSMsgReader is used to read RawSMsgs from a stream.
 type RawSMsgReader struct {
 	//reader to read SMsgs from
-	R         *bufio.Reader
-	lastError error
+	R *bufio.Reader
 }
 
 // NewRawSMsgReader returns a new RawSMsgReader reading from r.
@@ -201,22 +200,25 @@ func NewRawSMsgReader(r io.Reader) RawSMsgReader {
 // is encountered.
 func (r *RawSMsgReader) ReadRawSMsg() (RawSMsg, error) {
 	l, err := r.R.ReadBytes('\n')
-	if r.lastError != nil {
-		return RawSMsg{}, r.lastError
-	}
+
 	if len(l) > 0 {
-		err = nil
+		// Got data, strip line endings
 		for _, b := range []byte("\r\n") {
 			if len(l) > 0 && l[len(l)-1] == b {
 				l = l[:len(l)-1]
 			}
 		}
+		// If we got data with EOF, clear EOF (will appear on next read)
+		if err == io.EOF {
+			err = nil
+		}
 	} else if err == nil {
+		// No data and no error = unexpected
 		err = ErrUnexpectedEnd
 	} else if err == io.EOF {
+		// No data and EOF = end of stream
 		err = EOS
 	}
 
-	r.lastError = err
 	return RawSMsg{l}, err
 }
