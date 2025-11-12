@@ -156,47 +156,46 @@ func newSchemaCoercion(s *Schema) (schemaCoercion, error) {
 }
 
 func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (*DecodedMessage, error) {
-	//
-	// Fill out all field names from the schema, convert raw tag value to the field data type,
-
 	sc, ok := s.coercers[recordType.Tag]
 	if !ok {
 		return nil, &MissingSchemaError{Tag: recordType.Tag}
 	}
 
-	fields := make(Fields, len(sc.fields))
-	for i := range sc.fields {
-		fd := &sc.fields[i]
-
-		rawVal, ok := tags[fd.smsgTag]
-		if !ok {
-			if fd.isNullable {
-				fields[fd.name] = nil
-			} else {
-				return &DecodedMessage{
-					RecordType: sc.recordTypeName,
-					RecordTag:  recordType.Tag,
-					Fields:     fields,
-				}, fmt.Errorf("Field %s is missing from record, but not nullable", fd.name)
-			}
-		} else {
-			val, err := fd.coerceFunc(fd, rawVal)
-			if err != nil {
-				return &DecodedMessage{
-					RecordType: sc.recordTypeName,
-					RecordTag:  recordType.Tag,
-					Fields:     fields,
-				}, fmt.Errorf("failed converting %s in %s:%s : %w", rawVal, sc.recordTypeName, fd.name, err)
-			}
-			fields[fd.name] = val
-		}
-	}
-
-	return &DecodedMessage{
+	// Build message once - will be returned even on error (partial decode)
+	msg := &DecodedMessage{
 		RecordType: sc.recordTypeName,
 		RecordTag:  recordType.Tag,
-		Fields:     fields,
-	}, nil
+		Fields:     make(Fields, len(sc.fields)),
+	}
+
+	for i := range sc.fields {
+		fd := &sc.fields[i]
+		rawVal, ok := tags[fd.smsgTag]
+
+		// Handle missing or empty tags
+		if !ok || len(rawVal) == 0 {
+			// Empty tags (present but zero length) → "" for strings, nil/error for others
+			// Missing tags (not present) → nil for nullable, error for non-nullable
+			if len(rawVal) == 0 && ok && fd.isString {
+				msg.Fields[fd.name] = ""
+				continue
+			}
+			if fd.isNullable {
+				msg.Fields[fd.name] = nil
+				continue
+			}
+			return msg, fmt.Errorf("Field %s is missing from record, but not nullable", fd.name)
+		}
+
+		// Coerce non-empty value
+		val, err := fd.coerceFunc(fd, rawVal)
+		if err != nil {
+			return msg, fmt.Errorf("failed converting %s in %s:%s : %w", rawVal, sc.recordTypeName, fd.name, err)
+		}
+		msg.Fields[fd.name] = val
+	}
+
+	return msg, nil
 }
 
 // Decode uses the registred schemas to decode the RawSMsg and returns

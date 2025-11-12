@@ -2,6 +2,7 @@ package gosmsg
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"maps"
 	"strings"
@@ -322,5 +323,199 @@ func TestSchemaEncodeNoSchema(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no schema found") {
 		t.Errorf("Error should mention missing schema: %v", err)
+	}
+}
+
+// ============================================================================
+// Edge Case Tests - Demonstrating Bugs
+// ============================================================================
+
+// TestCoerceBoolEmptyValue tests that empty tags are handled correctly for bool fields.
+// Empty non-nullable bool should return an error from coerce() before reaching coerceToBool().
+func TestCoerceBoolEmptyValue(t *testing.T) {
+	tests := []struct {
+		name      string
+		nullable  bool
+		expectNil bool
+		expectErr bool
+	}{
+		{
+			name:      "non_nullable_empty",
+			nullable:  false,
+			expectNil: false,
+			expectErr: true,
+		},
+		{
+			name:      "nullable_empty",
+			nullable:  true,
+			expectNil: true,
+			expectErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nullableStr := "false"
+			if tt.nullable {
+				nullableStr = "true"
+			}
+
+			boolSchema := fmt.Sprintf(`
+recordtype: test
+version: 1
+metadata:
+    smsg_tag: 0x1000
+fields:
+- name: flag
+  nullable: %s
+  type: bool
+  metadata:
+    smsg_tag: 0x1001
+`, nullableStr)
+
+			s, err := LoadSchemaFromReader(strings.NewReader(boolSchema))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Message with empty boolean value (tag 0x1001 with length 0)
+			r := RawSMsg{[]byte("9000 10010 00000 ")}
+
+			decoder, err := NewSchemaDecoder([]Schema{*s})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			decoded, err := decoder.Decode(r)
+			if tt.expectErr {
+				if err == nil {
+					t.Error("Expected error for empty non-nullable bool, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			flagValue := decoded.Fields["flag"]
+			if tt.expectNil {
+				if flagValue != nil {
+					t.Errorf("Expected nil for nullable empty bool, got %v", flagValue)
+				}
+			} else {
+				if flagValue == nil {
+					t.Error("Expected non-nil value")
+				}
+			}
+		})
+	}
+}
+
+// TestEmptyTagHandling comprehensively tests how empty tags are handled for all field types.
+// Empty tags (length 0) should be treated as:
+// - Empty string for string fields (nullable or not)
+// - nil for nullable non-string fields
+// - Error for non-nullable non-string fields
+func TestEmptyTagHandling(t *testing.T) {
+	tests := []struct {
+		name         string
+		fieldType    string
+		nullable     bool
+		expectValue  any // Expected value (nil, "", etc.)
+		expectError  bool
+		enumMetadata string // Additional metadata for enum types
+	}{
+		// String fields: empty tag -> "" regardless of nullable
+		{name: "string_nullable", fieldType: "string", nullable: true, expectValue: "", expectError: false},
+		{name: "string_non_nullable", fieldType: "string", nullable: false, expectValue: "", expectError: false},
+
+		// Nullable non-string fields: empty tag -> nil
+		{name: "int_nullable", fieldType: "int64", nullable: true, expectValue: nil, expectError: false},
+		{name: "bool_nullable", fieldType: "bool", nullable: true, expectValue: nil, expectError: false},
+		{name: "float_nullable", fieldType: "float", nullable: true, expectValue: nil, expectError: false},
+		{name: "double_nullable", fieldType: "double", nullable: true, expectValue: nil, expectError: false},
+		// Note: binary type is not in dataTypeMap, so can't be loaded from YAML schemas
+		{
+			name:         "enum_nullable",
+			fieldType:    "enum",
+			nullable:     true,
+			expectValue:  nil,
+			expectError:  false,
+			enumMetadata: "\n    enum_values: [\"A\", \"B\", \"C\"]",
+		},
+
+		// Non-nullable non-string fields: empty tag -> error
+		{name: "int_non_nullable", fieldType: "int64", nullable: false, expectValue: nil, expectError: true},
+		{name: "bool_non_nullable", fieldType: "bool", nullable: false, expectValue: nil, expectError: true},
+		{name: "float_non_nullable", fieldType: "float", nullable: false, expectValue: nil, expectError: true},
+		{name: "double_non_nullable", fieldType: "double", nullable: false, expectValue: nil, expectError: true},
+		// Note: binary type is not in dataTypeMap, so can't be loaded from YAML schemas
+		{
+			name:         "enum_non_nullable",
+			fieldType:    "enum",
+			nullable:     false,
+			expectValue:  nil,
+			expectError:  true,
+			enumMetadata: "\n    enum_values: [\"A\", \"B\", \"C\"]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nullableStr := "false"
+			if tt.nullable {
+				nullableStr = "true"
+			}
+
+			schemaYAML := fmt.Sprintf(`
+recordtype: test
+version: 1
+metadata:
+    smsg_tag: 0x1000
+fields:
+- name: testfield
+  nullable: %s
+  type: %s
+  metadata:
+    smsg_tag: 0x1001%s
+`, nullableStr, tt.fieldType, tt.enumMetadata)
+
+			s, err := LoadSchemaFromReader(strings.NewReader(schemaYAML))
+			if err != nil {
+				t.Fatalf("Failed to load schema: %v", err)
+			}
+
+			// Message with empty field value (tag 0x1001 with length 0)
+			r := RawSMsg{[]byte("9000 10010 00000 ")}
+
+			decoder, err := NewSchemaDecoder([]Schema{*s})
+			if err != nil {
+				t.Fatalf("Failed to create decoder: %v", err)
+			}
+
+			decoded, err := decoder.Decode(r)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error for empty non-nullable %s, got nil", tt.fieldType)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			fieldValue := decoded.Fields["testfield"]
+			if tt.expectValue == nil {
+				if fieldValue != nil {
+					t.Errorf("Expected nil, got %v (%T)", fieldValue, fieldValue)
+				}
+			} else {
+				if fieldValue != tt.expectValue {
+					t.Errorf("Expected %v (%T), got %v (%T)", tt.expectValue, tt.expectValue, fieldValue, fieldValue)
+				}
+			}
+		})
 	}
 }
