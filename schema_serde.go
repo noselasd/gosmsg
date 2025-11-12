@@ -208,7 +208,7 @@ func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (*Decode
 				msg.Fields[fd.name] = nil
 				continue
 			}
-			return msg, fmt.Errorf("Field %s is missing from record, but not nullable", fd.name)
+			return msg, fmt.Errorf("field %s is missing from record, but not nullable", fd.name)
 		}
 
 		// Coerce non-empty value

@@ -412,6 +412,259 @@ fields:
 	}
 }
 
+// ============================================================================
+// Additional Error Path Tests - Common Real-World Scenarios
+// ============================================================================
+
+// TestDecodeInvalidUTF8String tests that invalid UTF-8 sequences in string fields
+// are handled gracefully by converting to valid UTF-8 with replacement characters.
+func TestDecodeInvalidUTF8String(t *testing.T) {
+	stringSchema := `
+recordtype: test
+version: 1
+metadata:
+    smsg_tag: 0x1000
+fields:
+- name: message
+  nullable: false
+  type: string
+  metadata:
+    smsg_tag: 0x1001
+`
+
+	s, err := LoadSchemaFromReader(strings.NewReader(stringSchema))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decoder, err := NewSchemaDecoder([]Schema{*s})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a message with invalid UTF-8 sequence
+	// 0xFF is not valid UTF-8
+	var msg RawSMsg
+	msg.AddVariableTag(0x1000)
+	msg.Add(0x1001, []byte("Hello\xFFWorld"))
+	msg.Terminate()
+
+	decoded, err := decoder.Decode(msg)
+	if err != nil {
+		t.Fatalf("Decode should not fail on invalid UTF-8: %v", err)
+	}
+
+	// The invalid byte should be replaced with the replacement character
+	messageValue := decoded.Fields["message"].(string)
+	if !strings.Contains(messageValue, "Hello") || !strings.Contains(messageValue, "World") {
+		t.Errorf("Message should contain Hello and World, got: %q", messageValue)
+	}
+	// Should have replacement character (?)
+	if !strings.Contains(messageValue, "?") {
+		t.Errorf("Invalid UTF-8 should be replaced with ?, got: %q", messageValue)
+	}
+}
+
+// TestDecodeMalformedNumbers tests that non-numeric strings in numeric fields
+// return appropriate errors rather than panicking or silently corrupting data.
+func TestDecodeMalformedNumbers(t *testing.T) {
+	tests := []struct {
+		name      string
+		fieldType string
+		value     string
+		wantErr   string
+	}{
+		{
+			name:      "letters_in_int",
+			fieldType: "int64",
+			value:     "abc123",
+			wantErr:   "invalid syntax",
+		},
+		{
+			name:      "multiple_decimals_in_float",
+			fieldType: "float",
+			value:     "12.34.56",
+			wantErr:   "invalid syntax",
+		},
+		{
+			name:      "text_in_int",
+			fieldType: "int32",
+			value:     "not_a_number",
+			wantErr:   "invalid syntax",
+		},
+		{
+			name:      "special_chars_in_double",
+			fieldType: "double",
+			value:     "12@34",
+			wantErr:   "invalid syntax",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			schemaYAML := fmt.Sprintf(`
+recordtype: test
+version: 1
+metadata:
+    smsg_tag: 0x1000
+fields:
+- name: number
+  nullable: false
+  type: %s
+  metadata:
+    smsg_tag: 0x1001
+`, tt.fieldType)
+
+			s, err := LoadSchemaFromReader(strings.NewReader(schemaYAML))
+			if err != nil {
+				t.Fatalf("Failed to load schema: %v", err)
+			}
+
+			decoder, err := NewSchemaDecoder([]Schema{*s})
+			if err != nil {
+				t.Fatalf("Failed to create decoder: %v", err)
+			}
+
+			// Create message with malformed number
+			var msg RawSMsg
+			msg.AddVariableTag(0x1000)
+			msg.Add(0x1001, []byte(tt.value))
+			msg.Terminate()
+
+			_, err = decoder.Decode(msg)
+			if err == nil {
+				t.Fatal("Expected error for malformed number, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Error should contain %q, got: %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestDecodeIntegerOutOfRange tests that values outside the range of their
+// declared integer type are still decoded (as int64) but this documents the
+// current behavior where no range validation is performed.
+func TestDecodeIntegerOutOfRange(t *testing.T) {
+	tests := []struct {
+		name      string
+		fieldType string
+		value     string
+		wantValue int64
+	}{
+		{
+			name:      "int8_overflow",
+			fieldType: "int8",
+			value:     "300", // > 127 (max int8)
+			wantValue: 300,
+		},
+		{
+			name:      "int16_overflow",
+			fieldType: "int16",
+			value:     "70000", // > 32767 (max int16)
+			wantValue: 70000,
+		},
+		{
+			name:      "int32_overflow",
+			fieldType: "int32",
+			value:     "3000000000", // > 2147483647 (max int32)
+			wantValue: 3000000000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			schemaYAML := fmt.Sprintf(`
+recordtype: test
+version: 1
+metadata:
+    smsg_tag: 0x1000
+fields:
+- name: number
+  nullable: false
+  type: %s
+  metadata:
+    smsg_tag: 0x1001
+`, tt.fieldType)
+
+			s, err := LoadSchemaFromReader(strings.NewReader(schemaYAML))
+			if err != nil {
+				t.Fatalf("Failed to load schema: %v", err)
+			}
+
+			decoder, err := NewSchemaDecoder([]Schema{*s})
+			if err != nil {
+				t.Fatalf("Failed to create decoder: %v", err)
+			}
+
+			// Create message with out-of-range value
+			var msg RawSMsg
+			msg.AddVariableTag(0x1000)
+			msg.Add(0x1001, []byte(tt.value))
+			msg.Terminate()
+
+			decoded, err := decoder.Decode(msg)
+			if err != nil {
+				t.Fatalf("Decode failed: %v", err)
+			}
+
+			// Current behavior: all integers decode to int64 without range checking
+			numberValue := decoded.Fields["number"].(int64)
+			if numberValue != tt.wantValue {
+				t.Errorf("Expected %d, got %d", tt.wantValue, numberValue)
+			}
+		})
+	}
+}
+
+// TestEncodeInvalidEnumValue tests that encoding a message with an enum value
+// not in the allowed list returns a clear error.
+func TestEncodeInvalidEnumValue(t *testing.T) {
+	enumSchema := `
+recordtype: test
+version: 1
+metadata:
+    smsg_tag: 0x1000
+fields:
+- name: status
+  nullable: false
+  type: enum
+  metadata:
+    smsg_tag: 0x1001
+    enum_values: ["ACTIVE", "INACTIVE", "PENDING"]
+`
+
+	s, err := LoadSchemaFromReader(strings.NewReader(enumSchema))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	encoder, err := NewSchemaEncoder([]Schema{*s})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Try to encode with invalid enum value
+	msg := &DecodedMessage{
+		RecordType: "test",
+		RecordTag:  0x1000,
+		Fields: Fields{
+			"status": "INVALID_STATUS",
+		},
+	}
+
+	_, err = encoder.Encode(msg)
+	if err == nil {
+		t.Fatal("Expected error for invalid enum value")
+	}
+	if !strings.Contains(err.Error(), "invalid enum value") {
+		t.Errorf("Error should mention invalid enum value: %v", err)
+	}
+	if !strings.Contains(err.Error(), "INVALID_STATUS") {
+		t.Errorf("Error should mention the invalid value: %v", err)
+	}
+}
+
 // TestEmptyTagHandling comprehensively tests how empty tags are handled for all field types.
 // Empty tags (length 0) should be treated as:
 // - Empty string for string fields (nullable or not)

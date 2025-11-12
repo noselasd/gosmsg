@@ -277,3 +277,58 @@ func TestParseErrTagAtEOF(t *testing.T) {
 		})
 	}
 }
+
+// ============================================================================
+// Additional Error Path Tests - Common Real-World Scenarios
+// ============================================================================
+
+// TestIteratorWithCorruptedLength tests that the iterator handles corrupted
+// length values gracefully without buffer overruns. This verifies the overflow
+// protection added to NextTag.
+func TestIteratorWithCorruptedLength(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    []byte
+		wantErr error
+	}{
+		{
+			name:    "length_exceeds_remaining_data",
+			data:    []byte("100110 abc"), // Claims 10 bytes but only has 3
+			wantErr: io.ErrShortBuffer,
+		},
+		{
+			name:    "huge_length_value",
+			data:    []byte("10019999999 abc"), // Absurdly large length
+			wantErr: io.ErrShortBuffer,
+		},
+		{
+			name:    "length_equals_remaining",
+			data:    []byte("10013 abc"), // Exactly 3 bytes available
+			wantErr: nil,                 // Should succeed
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := RawSMsg{tt.data}
+			it := r.Tags()
+
+			tag, err := it.NextTag()
+			if tt.wantErr != nil {
+				if err != tt.wantErr {
+					t.Errorf("Expected error %v, got %v", tt.wantErr, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected success, got error: %v", err)
+				}
+				if tag.Tag != 0x1001 {
+					t.Errorf("Expected tag 0x1001, got 0x%04X", tag.Tag)
+				}
+				if string(tag.Data) != "abc" {
+					t.Errorf("Expected data 'abc', got %q", string(tag.Data))
+				}
+			}
+		})
+	}
+}

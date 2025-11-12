@@ -107,18 +107,31 @@ func (s *RawSMsg) Terminate() {
 // escaping to prevent breaking the message delimiter, not string-level escaping.
 // The escaped sequences are not decoded back to actual newlines.
 func (s *RawSMsg) AddSafe(tag uint16, data []byte) {
-	r := make([]byte, 0, len(data))
+	// First pass: count how many escape sequences we need
+	escapeCount := 0
+	for _, c := range data {
+		if c == '\r' || c == '\n' {
+			escapeCount++
+		}
+	}
+
+	// If no escaping needed, use the data as-is
+	if escapeCount == 0 {
+		s.addImpl(tag, len(data), data)
+		return
+	}
+
+	// Allocate exact size needed: original length + number of escape chars
+	r := make([]byte, 0, len(data)+escapeCount)
 	for _, c := range data {
 		switch c {
 		case '\r':
-			c = 'r'
-			r = append(r, '\\')
+			r = append(r, '\\', 'r')
 		case '\n':
-			c = 'n'
-			r = append(r, '\\')
+			r = append(r, '\\', 'n')
+		default:
+			r = append(r, c)
 		}
-
-		r = append(r, c)
 	}
 	s.addImpl(tag, len(r), r)
 }
