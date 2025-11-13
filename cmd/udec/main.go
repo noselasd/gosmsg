@@ -43,18 +43,31 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/noselasd/gosmsg"
 )
 
+// schemaFiles is a custom flag type that accumulates multiple schema file/directory paths
+type schemaFiles []string
+
+func (s *schemaFiles) String() string {
+	return strings.Join(*s, ",")
+}
+
+func (s *schemaFiles) Set(value string) error {
+	*s = append(*s, value)
+	return nil
+}
+
 var (
-	schemaFile = flag.String("schema", "", "YAML schema file for interpreting messages")
-	verbose    = flag.Bool("v", false, "Enable verbose output (show tag lengths and numeric tags)")
-	showHelp   = flag.Bool("help", false, "Show help message")
+	schemas  schemaFiles
+	verbose  = flag.Bool("v", false, "Enable verbose output for raw mode")
+	showHelp = flag.Bool("h", false, "Show help message")
 )
 
 func main() {
-	flag.BoolVar(verbose, "verbose", false, "Enable verbose output (alias for -v)")
+	flag.Var(&schemas, "schema", "YAML schema file or directory (can be specified multiple times)")
 	flag.Usage = usage
 	flag.Parse()
 
@@ -84,18 +97,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Load schema if provided
-	var schema *gosmsg.Schema
+	// Load schemas if provided
 	var decoder *gosmsg.SchemaDecoder
-	if *schemaFile != "" {
+	var loadedSchemas []gosmsg.Schema
+	if len(schemas) > 0 {
 		var err error
-		schema, err = gosmsg.LoadSchema(*schemaFile)
+		loadedSchemas, err = loadSchemas(schemas)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error loading schema from %s: %v\n", *schemaFile, err)
+			fmt.Fprintf(os.Stderr, "Error loading schemas: %v\n", err)
 			os.Exit(1)
 		}
 
-		decoder, err = gosmsg.NewSchemaDecoder([]gosmsg.Schema{*schema})
+		decoder, err = gosmsg.NewSchemaDecoder(loadedSchemas)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating decoder: %v\n", err)
 			os.Exit(1)
@@ -123,9 +136,9 @@ func main() {
 		}
 		msgCount++
 
-		if schema != nil && decoder != nil {
+		if decoder != nil {
 			// Schema mode
-			printWithSchema(msg, decoder, schema)
+			printWithSchema(msg, decoder)
 		} else {
 			// Raw mode
 			printRaw(msg)
@@ -186,8 +199,77 @@ func printRaw(msg gosmsg.RawSMsg) {
 	}
 }
 
+// loadSchemas loads schemas from a list of file or directory paths
+func loadSchemas(paths []string) ([]gosmsg.Schema, error) {
+	var schemas []gosmsg.Schema
+	seenTags := make(map[uint16]bool)
+
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("cannot access %s: %w", path, err)
+		}
+
+		if info.IsDir() {
+			// Load all .yaml and .yml files from directory (non-recursive)
+			entries, err := os.ReadDir(path)
+			if err != nil {
+				return nil, fmt.Errorf("cannot read directory %s: %w", path, err)
+			}
+
+			for _, entry := range entries {
+				if entry.IsDir() {
+					continue
+				}
+				name := entry.Name()
+				if strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
+					fullPath := path + string(os.PathSeparator) + name
+					schema, err := gosmsg.LoadSchema(fullPath)
+					if err != nil {
+						return nil, fmt.Errorf("loading schema from %s: %w", fullPath, err)
+					}
+
+					// Check for duplicate record tags
+					if tagVal, ok := schema.RecordType.Metadata["smsg_tag"].(int); ok {
+						tag := uint16(tagVal)
+						if seenTags[tag] {
+							return nil, fmt.Errorf("duplicate record tag 0x%04X in %s", tag, fullPath)
+						}
+						seenTags[tag] = true
+					}
+
+					schemas = append(schemas, *schema)
+				}
+			}
+		} else {
+			// Load single schema file
+			schema, err := gosmsg.LoadSchema(path)
+			if err != nil {
+				return nil, fmt.Errorf("loading schema from %s: %w", path, err)
+			}
+
+			// Check for duplicate record tags
+			if tagVal, ok := schema.RecordType.Metadata["smsg_tag"].(int); ok {
+				tag := uint16(tagVal)
+				if seenTags[tag] {
+					return nil, fmt.Errorf("duplicate record tag 0x%04X in %s", tag, path)
+				}
+				seenTags[tag] = true
+			}
+
+			schemas = append(schemas, *schema)
+		}
+	}
+
+	if len(schemas) == 0 {
+		return nil, fmt.Errorf("no schemas loaded from provided paths")
+	}
+
+	return schemas, nil
+}
+
 // printWithSchema prints a message using schema interpretation
-func printWithSchema(msg gosmsg.RawSMsg, decoder *gosmsg.SchemaDecoder, schema *gosmsg.Schema) {
+func printWithSchema(msg gosmsg.RawSMsg, decoder *gosmsg.SchemaDecoder) {
 	decoded, err := decoder.Decode(msg)
 	if err != nil {
 		fmt.Printf("Error decoding message: %v\n", err)
@@ -199,65 +281,25 @@ func printWithSchema(msg gosmsg.RawSMsg, decoder *gosmsg.SchemaDecoder, schema *
 	}
 
 	// Print record header
-	if *verbose {
-		fmt.Printf("Record: %s (tag: 0x%04X)\n", decoded.RecordType, decoded.RecordTag)
-	} else {
-		fmt.Printf("Record: %s (0x%04X)\n", decoded.RecordType, decoded.RecordTag)
-	}
+	fmt.Printf("Record: %s (tag: 0x%04X)\n", decoded.RecordType, decoded.RecordTag)
 
-	// Collect field info for alignment
-	type fieldDisplay struct {
-		name     string
-		tag      uint16
-		value    any
-		typeName string
-	}
-	var displays []fieldDisplay
-
-	for _, field := range schema.Fields {
-		value, exists := decoded.Fields[field.Name]
-		if !exists {
-			continue
-		}
-
-		tag := uint16(0)
-		if tagVal, ok := field.Metadata["smsg_tag"].(int); ok {
-			tag = uint16(tagVal)
-		}
-
-		typeName := field.Type.String()
-
-		// Calculate length (approximate from original data)
-
-		displays = append(displays, fieldDisplay{
-			name:     field.Name,
-			tag:      tag,
-			value:    value,
-			typeName: typeName,
-		})
-	}
-
-	// Calculate column widths
+	// Calculate column widths for field names
 	maxNameLen := 0
-	maxTypeLen := 0
-	for _, d := range displays {
-		if len(d.name) > maxNameLen {
-			maxNameLen = len(d.name)
-		}
-		if len(d.typeName) > maxTypeLen {
-			maxTypeLen = len(d.typeName)
+	for name := range decoded.Fields {
+		if len(name) > maxNameLen {
+			maxNameLen = len(name)
 		}
 	}
 
-	// Print fields with alignment
-	for _, d := range displays {
-		if *verbose {
-			fmt.Printf("  %-*s (tag: 0x%04X,%8s):  %v\n",
-				maxNameLen, d.name, d.tag, d.typeName, d.value)
-		} else {
-			fmt.Printf("  %-*s:  %v\n",
-				maxNameLen, d.name, d.value)
-		}
+	// Print fields with alignment (sorted by name for consistent output)
+	var fieldNames []string
+	for name := range decoded.Fields {
+		fieldNames = append(fieldNames, name)
+	}
+
+	for _, name := range fieldNames {
+		value := decoded.Fields[name]
+		fmt.Printf("  %-*s:  %v\n", maxNameLen, name, value)
 	}
 }
 
