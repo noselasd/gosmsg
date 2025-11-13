@@ -21,6 +21,11 @@ fields:
   type: int64
   metadata:
     smsg_tag: 0x1020
+- name: ni
+  nullable: false
+  type: int8
+  metadata:
+    smsg_tag: 0x10AA
 - name: anr
   nullable: true
   type: string
@@ -39,7 +44,7 @@ func TestSchemaDecode(t *testing.T) {
 		log.Fatal(err)
 	}
 
-	r := RawSMsg{[]byte("9019 10204 123410333 98700000 ")}
+	r := RawSMsg{[]byte("9019 10204 123410333 98710AA1 100000 ")}
 	sd, err := NewSchemaDecoder([]Schema{*s})
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +66,7 @@ func TestSchemaDecode(t *testing.T) {
 	expected := map[string]any{
 		"anr":      "987",
 		"start_ts": int64(1234),
+		"ni":       int8(1),
 	}
 
 	if !maps.Equal(expected, d.Fields) {
@@ -136,6 +142,7 @@ func TestSchemaEncode(t *testing.T) {
 		Fields: Fields{
 			"start_ts": int64(1234),
 			"anr":      "987",
+			"ni":       int8(2),
 		},
 	}
 
@@ -145,8 +152,9 @@ func TestSchemaEncode(t *testing.T) {
 	}
 
 	// Verify the encoded message
-	if string(raw.Data) != "9019 10204 123410333 98700000 \n" {
-		t.Errorf("Encoded = %q, want %q", string(raw.Data), "9019 10204 123410333 98700000 \n")
+	expected := "9019 10204 123410AA1 210333 98700000 \n"
+	if string(raw.Data) != expected {
+		t.Errorf("Encoded = %q, want %q", string(raw.Data), expected)
 	}
 }
 
@@ -167,7 +175,7 @@ func TestSchemaEncodeRoundTrip(t *testing.T) {
 	}
 
 	// Original message
-	original := RawSMsg{[]byte("9019 10204 123410333 98700000 ")}
+	original := RawSMsg{[]byte("9019 10AA2 1010204 123410333 98700000 ")}
 
 	// Decode
 	decoded, err := decoder.Decode(original)
@@ -279,6 +287,7 @@ func TestSchemaEncodeNullable(t *testing.T) {
 		RecordType: "sip",
 		RecordTag:  0x1019,
 		Fields: Fields{
+			"ni":       int8(127),
 			"start_ts": int64(1234),
 		},
 	}
@@ -543,8 +552,7 @@ fields:
 }
 
 // TestDecodeIntegerOutOfRange tests that values outside the range of their
-// declared integer type are still decoded (as int64) but this documents the
-// current behavior where no range validation is performed.
+// declared integer type gives an error
 func TestDecodeIntegerOutOfRange(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -603,15 +611,9 @@ fields:
 			msg.Add(0x1001, []byte(tt.value))
 			msg.Terminate()
 
-			decoded, err := decoder.Decode(msg)
-			if err != nil {
-				t.Fatalf("Decode failed: %v", err)
-			}
-
-			// Current behavior: all integers decode to int64 without range checking
-			numberValue := decoded.Fields["number"].(int64)
-			if numberValue != tt.wantValue {
-				t.Errorf("Expected %d, got %d", tt.wantValue, numberValue)
+			_, err = decoder.Decode(msg)
+			if err == nil {
+				t.Errorf("Expected %s, to fail got %d", tt.value, tt.wantValue)
 			}
 		})
 	}
