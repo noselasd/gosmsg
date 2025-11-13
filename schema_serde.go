@@ -352,8 +352,8 @@ func encodeFloat64(v float64) []byte {
 }
 
 var (
-	_bFalse = []byte("0")
-	_bTrue  = []byte("1")
+	_bFalse = []byte{'0'}
+	_bTrue  = []byte{'1'}
 )
 
 func encodeBool(v bool) []byte {
