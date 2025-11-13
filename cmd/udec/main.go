@@ -176,21 +176,43 @@ func printRaw(msg gosmsg.RawSMsg) {
 		fmt.Printf("Record: 0x%04X (length: %d)\n", recordTag.Tag, len(recordTag.Data))
 	}
 
-	subIt := recordTag.SubTags()
+	// Print all tags recursively
+	printTags(recordTag.SubTags(), "  ")
+}
+
+// printTags recursively prints tags with proper indentation
+func printTags(it gosmsg.Iter, indent string) {
 	for {
-		tag, err := subIt.NextTag()
+		tag, err := it.NextTag()
 		if err == gosmsg.EOS {
 			break
 		}
 		if err != nil {
-			fmt.Printf("  Error reading tag: %v\n", err)
+			fmt.Printf("%sError reading tag: %v\n", indent, err)
 			break
 		}
 
-		if *verbose {
-			fmt.Printf("  0x%04X (length: %3d):  %s\n", tag.Tag, len(tag.Data), tag.Data)
+		// Check if this is a constructor tag
+		if tag.Constructor {
+			// Print constructor tag header
+			if *verbose {
+				if tag.VarLen {
+					fmt.Printf("%s0x%04X (constructor, varlen):\n", indent, tag.Tag)
+				} else {
+					fmt.Printf("%s0x%04X (constructor, length: %3d):\n", indent, tag.Tag, len(tag.Data))
+				}
+			} else {
+				fmt.Printf("%s0x%04X (constructor):\n", indent, tag.Tag)
+			}
+			// Recursively print subtags with increased indentation
+			printTags(tag.SubTags(), indent+"  ")
 		} else {
-			fmt.Printf("  0x%04X:  %s\n", tag.Tag, tag.Data)
+			// Print regular tag with data
+			if *verbose {
+				fmt.Printf("%s0x%04X (length: %3d):  %s\n", indent, tag.Tag, len(tag.Data), tag.Data)
+			} else {
+				fmt.Printf("%s0x%04X:  %s\n", indent, tag.Tag, tag.Data)
+			}
 		}
 		if tag.Tag == 0 {
 			break // Terminator
