@@ -92,8 +92,27 @@ func coerceToString(_ *fieldData, val []byte) (any, error) {
 	return strings.ToValidUTF8(string(val), "?"), nil
 }
 
-func coerceToInt(_ *fieldData, val []byte) (any, error) {
-	return strconv.ParseInt(string(val), 10, 64)
+func coerceToInt8(_ *fieldData, val []byte) (any, error) {
+	v, err := strconv.ParseInt(string(val), 10, 8)
+	return int8(v), err
+}
+func coerceToInt16(_ *fieldData, val []byte) (any, error) {
+	v, err := strconv.ParseInt(string(val), 10, 16)
+	return int16(v), err
+}
+
+func coerceToInt32(_ *fieldData, val []byte) (any, error) {
+	v, err := strconv.ParseInt(string(val), 10, 32)
+	return int32(v), err
+}
+func coerceToInt64(_ *fieldData, val []byte) (any, error) {
+	v, err := strconv.ParseInt(string(val), 10, 64)
+	return v, err
+}
+
+func coerceToFloat32(_ *fieldData, val []byte) (any, error) {
+	v, err := strconv.ParseFloat(string(val), 32)
+	return float32(v), err
 }
 
 func coerceToFloat64(_ *fieldData, val []byte) (any, error) {
@@ -121,7 +140,6 @@ func newFieldData(f *Field) (fieldData, error) {
 	}
 	var coerceFunc coerceFunc
 	var enumMap map[string]bool
-
 	switch f.Type {
 	// We convert all integers to int64, float/double to float64 like pysmsg. This may be a mistake.
 	case EnumType:
@@ -132,9 +150,17 @@ func newFieldData(f *Field) (fieldData, error) {
 			enumMap[v.(string)] = true
 		}
 		coerceFunc = coerceToEnum
-	case Int8Type, Int16Type, Int32Type, Int64Type:
-		coerceFunc = coerceToInt
-	case FloatType, DoubleType:
+	case Int8Type:
+		coerceFunc = coerceToInt8
+	case Int16Type:
+		coerceFunc = coerceToInt16
+	case Int32Type:
+		coerceFunc = coerceToInt32
+	case Int64Type:
+		coerceFunc = coerceToInt64
+	case FloatType:
+		coerceFunc = coerceToFloat32
+	case DoubleType:
 		coerceFunc = coerceToFloat64
 	case BoolType:
 		coerceFunc = coerceToBool
@@ -313,19 +339,28 @@ type SchemaEncoder struct {
 
 // Reverse coercion functions - convert Go types to byte strings
 
-func encodeInt64(v int64) []byte {
-	return []byte(strconv.FormatInt(v, 10))
+func encodeInt[T ~int | ~int8 | ~int16 | ~int32 | ~int64](v T) []byte {
+	return []byte(strconv.FormatInt(int64(v), 10))
+}
+
+func encodeFloat32(v float32) []byte {
+	return []byte(strconv.FormatFloat(float64(v), 'f', -1, 32))
 }
 
 func encodeFloat64(v float64) []byte {
 	return []byte(strconv.FormatFloat(v, 'f', -1, 64))
 }
 
+var (
+	_bFalse = []byte("0")
+	_bTrue  = []byte("1")
+)
+
 func encodeBool(v bool) []byte {
 	if v {
-		return []byte("1")
+		return _bTrue
 	}
-	return []byte("0")
+	return _bFalse
 }
 
 func encodeString(v string) []byte {
@@ -347,14 +382,41 @@ func (e *SchemaEncoder) encodeValue(field *Field, value any) ([]byte, error) {
 	}
 
 	switch field.Type {
-	case Int8Type, Int16Type, Int32Type, Int64Type:
+	case Int8Type:
+		v, ok := value.(int8)
+		if !ok {
+			return nil, fmt.Errorf("field %s: expected int8, got %T", field.Name, value)
+		}
+		return encodeInt(v), nil
+
+	case Int16Type:
+		v, ok := value.(int32)
+		if !ok {
+			return nil, fmt.Errorf("field %s: expected int16, got %T", field.Name, value)
+		}
+		return encodeInt(v), nil
+
+	case Int32Type:
+		v, ok := value.(int32)
+		if !ok {
+			return nil, fmt.Errorf("field %s: expected int32, got %T", field.Name, value)
+		}
+		return encodeInt(v), nil
+
+	case Int64Type:
 		v, ok := value.(int64)
 		if !ok {
 			return nil, fmt.Errorf("field %s: expected int64, got %T", field.Name, value)
 		}
-		return encodeInt64(v), nil
+		return encodeInt(v), nil
 
-	case FloatType, DoubleType:
+	case FloatType:
+		v, ok := value.(float32)
+		if !ok {
+			return nil, fmt.Errorf("field %s: expected float32, got %T", field.Name, value)
+		}
+		return encodeFloat32(v), nil
+	case DoubleType:
 		v, ok := value.(float64)
 		if !ok {
 			return nil, fmt.Errorf("field %s: expected float64, got %T", field.Name, value)
