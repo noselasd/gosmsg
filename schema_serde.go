@@ -390,7 +390,7 @@ func (e *SchemaEncoder) encodeValue(field *Field, value any) ([]byte, error) {
 		return encodeInt(v), nil
 
 	case Int16Type:
-		v, ok := value.(int32)
+		v, ok := value.(int16)
 		if !ok {
 			return nil, fmt.Errorf("field %s: expected int16, got %T", field.Name, value)
 		}
