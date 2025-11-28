@@ -136,7 +136,7 @@ func TestSchemaEncode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	msg := &DecodedMessage{
+	msg := &SMsg{
 		RecordType: "sip",
 		RecordTag:  0x1019,
 		Fields: Fields{
@@ -219,7 +219,7 @@ func TestSchemaEncodeMissingRequired(t *testing.T) {
 	}
 
 	// Missing required field start_ts
-	msg := &DecodedMessage{
+	msg := &SMsg{
 		RecordType: "sip",
 		RecordTag:  0x1019,
 		Fields: Fields{
@@ -248,7 +248,7 @@ func TestSchemaEncodeTypeMismatch(t *testing.T) {
 	}
 
 	// Wrong type for start_ts (string instead of int64)
-	msg := &DecodedMessage{
+	msg := &SMsg{
 		RecordType: "sip",
 		RecordTag:  0x1019,
 		Fields: Fields{
@@ -283,7 +283,7 @@ func TestSchemaEncodeNullable(t *testing.T) {
 	}
 
 	// Omit nullable field anr
-	msg := &DecodedMessage{
+	msg := &SMsg{
 		RecordType: "sip",
 		RecordTag:  0x1019,
 		Fields: Fields{
@@ -320,7 +320,7 @@ func TestSchemaEncodeNoSchema(t *testing.T) {
 	}
 
 	// Wrong record type
-	msg := &DecodedMessage{
+	msg := &SMsg{
 		RecordType: "unknown",
 		RecordTag:  0x9999,
 		Fields:     Fields{},
@@ -647,7 +647,7 @@ fields:
 	}
 
 	// Try to encode with invalid enum value
-	msg := &DecodedMessage{
+	msg := &SMsg{
 		RecordType: "test",
 		RecordTag:  0x1000,
 		Fields: Fields{

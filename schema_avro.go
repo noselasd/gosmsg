@@ -286,7 +286,7 @@ func FieldToAvro(field *Field, addMetadataFlag bool) (map[string]any, error) {
 //
 // Metadata conversion:
 //   - 'description' is converted to the Avro schema 'doc' element
-//   - Other metadata are added to the Avro schema in a 'UTEL:metadata' dict
+//   - Other metadata are optionally added to the Avro schema in a 'UTEL:metadata' dict
 //
 // Args:
 //   - schema: Schema to convert
