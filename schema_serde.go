@@ -16,21 +16,22 @@ const (
 // Maps field names to their typed values according to the schema.
 //
 // Value types depend on the field's DataType:
-//   - Int8Type, Int16Type, Int32Type, Int64Type -> int64
-//   - FloatType, DoubleType -> float64
+//   - Int8Type, Int16Type, Int32Type, Int64Type -> intXX
+//   - FloatType, DoubleType -> floatXX
 //   - BoolType -> bool
 //   - StringType, EnumType -> string
 //   - BinaryType -> []byte
-//   - Nullable fields that are missing or empty -> nil
+//   - Nullable fields that are missing  -> nil
+//   - Nullable fields with an empty value -> nil, except for StringType where
+//     an empty value represents an empty string ""
 type Fields map[string]any
 
-// DecodedMessage represents a decoded SMSG message with its record type
+// SMsg represents a decoded SMSG message with its record type
 // metadata and field values. This structure is returned by SchemaDecoder.Decode
 // and can be passed to SchemaEncoder.Encode for round-trip encoding.
 //
-// The RecordType and RecordTag fields identify the message type, which is
-// essential for routing and processing in multi-message systems.
-type DecodedMessage struct {
+// The RecordType and RecordTag fields identify the message type
+type SMsg struct {
 	RecordType string // Name of the record type (e.g., "sip", "call_detail")
 	RecordTag  uint16 // Numeric tag identifying the record type (e.g., 0x1019)
 	Fields     Fields // Decoded field values keyed by field name
@@ -38,8 +39,8 @@ type DecodedMessage struct {
 
 // String returns a string representation of the decoded message for debugging.
 // Shows the record type name, tag, and field count (but not field values).
-func (d *DecodedMessage) String() string {
-	return fmt.Sprintf("DecodedMessage{RecordType: %s, RecordTag: 0x%04X, Fields: %d}",
+func (d *SMsg) String() string {
+	return fmt.Sprintf("SMsg{RecordType: %s, RecordTag: 0x%04X, Fields: %d}",
 		d.RecordType, d.RecordTag, len(d.Fields))
 }
 
@@ -63,7 +64,7 @@ type schemaCoercion struct {
 	fields         []fieldData
 }
 
-// SchemaDecoder decodes RawSMsg messages into typed DecodedMessage structures
+// SchemaDecoder decodes RawSMsg messages into typed SMsg structures
 // using registered schemas. The decoder pre-computes type coercion functions
 // during initialization for efficient repeated decoding.
 //
@@ -141,7 +142,6 @@ func newFieldData(f *Field) (fieldData, error) {
 	var coerceFunc coerceFunc
 	var enumMap map[string]bool
 	switch f.Type {
-	// We convert all integers to int64, float/double to float64 like pysmsg. This may be a mistake.
 	case EnumType:
 		enumMap = make(map[string]bool)
 		// validateEnumMetadata ensures enum_values is []any containing only strings
@@ -205,14 +205,14 @@ func newSchemaCoercion(s *Schema) (schemaCoercion, error) {
 	}, nil
 }
 
-func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (*DecodedMessage, error) {
+func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (*SMsg, error) {
 	sc, ok := s.coercers[recordType.Tag]
 	if !ok {
 		return nil, &MissingSchemaError{Tag: recordType.Tag}
 	}
 
 	// Build message once - will be returned even on error (partial decode)
-	msg := &DecodedMessage{
+	msg := &SMsg{
 		RecordType: sc.recordTypeName,
 		RecordTag:  recordType.Tag,
 		Fields:     make(Fields, len(sc.fields)),
@@ -248,7 +248,7 @@ func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (*Decode
 	return msg, nil
 }
 
-// Decode decodes a RawSMsg into a typed DecodedMessage using the registered schemas.
+// Decode decodes a RawSMsg into a typed SMsg using the registered schemas.
 // Returns the decoded message with record type information and typed field values.
 //
 // Type conversions:
@@ -271,7 +271,7 @@ func (s *SchemaDecoder) coerce(recordType *Tag, tags map[uint16][]byte) (*Decode
 //	if errors.As(err, &e) {
 //	    handleMissingSchemaError(err)
 //	}
-func (s *SchemaDecoder) Decode(r RawSMsg) (*DecodedMessage, error) {
+func (s *SchemaDecoder) Decode(r RawSMsg) (*SMsg, error) {
 	it := r.Tags()
 
 	recordType, err := it.NextTag()
@@ -322,11 +322,11 @@ func NewSchemaDecoder(schemas []Schema) (*SchemaDecoder, error) {
 }
 
 // ============================================================================
-// Encoding (DecodedMessage -> RawSMsg)
+// Encoding (SMsg -> RawSMsg)
 // ============================================================================
 
-// SchemaEncoder encodes DecodedMessages back to RawSMsg format using schemas.
-// This enables round-trip encoding: RawSMsg -> DecodedMessage -> RawSMsg.
+// SchemaEncoder encodes SMsg back to RawSMsg format using schemas.
+// This enables round-trip encoding: RawSMsg -> SMsg -> RawSMsg.
 //
 // The encoder validates that field values match their schema types and that
 // all required (non-nullable) fields are present. Fields are encoded in the
@@ -468,7 +468,7 @@ func (e *SchemaEncoder) encodeValue(field *Field, value any) ([]byte, error) {
 	}
 }
 
-// Encode converts a DecodedMessage back to RawSMsg format using the schema.
+// Encode converts a SMsg back to RawSMsg format using the schema.
 //
 // The encoding process:
 //  1. Looks up schema by RecordType name from the message
@@ -494,7 +494,7 @@ func (e *SchemaEncoder) encodeValue(field *Field, value any) ([]byte, error) {
 //
 // Returns an error if validation fails or if no schema exists for the record type.
 // No partial messages are returned on error.
-func (e *SchemaEncoder) Encode(msg *DecodedMessage) (*RawSMsg, error) {
+func (e *SchemaEncoder) Encode(msg *SMsg) (*RawSMsg, error) {
 	// 1. Lookup schema by record type name
 	schema, ok := e.schemas[msg.RecordType]
 	if !ok {
@@ -558,11 +558,11 @@ func (e *SchemaEncoder) Encode(msg *DecodedMessage) (*RawSMsg, error) {
 	return &outer, nil
 }
 
-// NewSchemaEncoder creates a SchemaEncoder that can encode DecodedMessages
+// NewSchemaEncoder creates a SchemaEncoder that can encode SMsg
 // back to RawSMsg format according to the provided schemas.
 //
 // Multiple schemas can be registered to handle different message types.
-// The encoder selects the appropriate schema based on the DecodedMessage's
+// The encoder selects the appropriate schema based on the SMsg's
 // RecordType field.
 //
 // Schema requirements:

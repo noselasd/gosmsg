@@ -282,7 +282,7 @@ func (s *Schema) GetField(name string) (*Field, error) {
 	return nil, fmt.Errorf("field '%s' not found in schema", name)
 }
 
-// SetField sets or updates a field in the schema.
+// SetField adds or updates a field in the schema.
 // If a field with the same name already exists, it is replaced.
 // Otherwise, the field is appended to the schema's field list.
 func (s *Schema) SetField(field Field) {
@@ -297,9 +297,9 @@ func (s *Schema) SetField(field Field) {
 
 // Contains checks if a field with the given name exists in the schema's
 // top-level fields. Returns true if found, false otherwise.
-func (s *Schema) Contains(name string) bool {
+func (s *Schema) Contains(fieldName string) bool {
 	for i := range s.Fields {
-		if s.Fields[i].Name == name {
+		if s.Fields[i].Name == fieldName {
 			return true
 		}
 	}
